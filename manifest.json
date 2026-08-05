@@ -1,0 +1,11 @@
+{
+  "name": "MealFast",
+  "short_name": "MealFast",
+  "description": "Personal meal logging and intermittent fasting tracker",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#1B2430",
+  "theme_color": "#1B2430",
+  "orientation": "portrait"
+}
