@@ -25,7 +25,8 @@ html, body {
 body {
   display: flex;
   flex-direction: column;
-  min-height: 100vh;
+  height: 100vh;          /* fallback for older browsers */
+  height: 100dvh;         /* dynamic viewport height — keeps tab bar on-screen on iOS Safari */
   padding-bottom: env(safe-area-inset-bottom);
 }
 
