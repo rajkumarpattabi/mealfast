@@ -1,5 +1,6 @@
 /* ---------- Storage helpers (all data stays in this browser, on this device) ---------- */
 const STORE_KEYS = { logs: "mf_logs", weights: "mf_weights", schedule: "mf_schedule" };
+const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 
 function load(key, fallback) {
   try {
@@ -154,7 +155,7 @@ function updateStreakBadge(now) {
 }
 
 function renderTimer() {
-  if (autoCloseStaleEating()) renderRecent();
+  if (autoCloseStaleEating()) renderLogs();
   const now = new Date();
   const state = rollingFastState(now);
   const ring = document.getElementById("ringProgress");
@@ -236,7 +237,7 @@ function logEatMarker(marker) {
   const note = marker === "start" ? "Started eating" : "Ended eating";
   logs.unshift({ id: uid(), type: "Meal", marker, note, timestamp: new Date().toISOString() });
   save(STORE_KEYS.logs, logs);
-  renderRecent();
+  renderLogs();
   renderTimer();
   showToast(marker === "start" ? "Started eating" : "Fast started");
 }
@@ -271,7 +272,8 @@ document.querySelectorAll(".tab-btn").forEach(btn => {
     document.getElementById("tab-" + btn.dataset.tab).classList.add("active");
     if (btn.dataset.tab === "trends") { drawWeightChart(); drawFastChart(); }
     if (btn.dataset.tab === "schedule") { renderSchedule(); }
-    if (btn.dataset.tab === "log") { renderRecent(); }
+    if (btn.dataset.tab === "logs") { renderLogs(); }
+    if (btn.dataset.tab === "entries") { populateWeightSelect(); }
   });
 });
 
@@ -332,39 +334,70 @@ document.getElementById("saveLogBtn").addEventListener("click", () => {
   document.getElementById("exactTimeToggle").checked = false;
   document.getElementById("exactTimeInput").hidden = true;
   updateSelectedTimeDisplay();
-  renderRecent();
+  renderLogs();
+  renderTimer();      // a new meal changes the current fast immediately
   showToast("Saved");
 });
 
-function renderRecent() {
-  const list = document.getElementById("recentList");
+// The Logs tab: every meal/drink/water/electrolyte log (including the Timer-tab
+// eating markers) plus every weight entry, newest first, each deletable.
+function renderLogs() {
+  const list = document.getElementById("logList");
+  const empty = document.getElementById("logsEmpty");
+
+  const items = [];
+  logs.forEach(l => items.push({
+    kind: "log", id: l.id, when: new Date(l.timestamp),
+    type: l.type, note: l.note || "",
+    value: new Date(l.timestamp).toLocaleTimeString([], {hour:"numeric", minute:"2-digit"})
+  }));
+  weights.forEach(w => items.push({
+    kind: "weight", id: w.id, when: new Date(w.timestamp),
+    type: "Weight", note: "",
+    value: `${Number(w.weightKg).toFixed(1)} kg`
+  }));
+  items.sort((a,b) => b.when - a.when);
+
   list.innerHTML = "";
-  logs.slice(0, 10).forEach(entry => {
+  if (items.length === 0) { empty.hidden = false; return; }
+  empty.hidden = true;
+
+  items.forEach(it => {
     const li = document.createElement("li");
-    const t = new Date(entry.timestamp);
+    li.className = "log-item";
     li.innerHTML = `
-      <div>
-        <div class="rl-type">${entry.type}</div>
-        ${entry.note ? `<div class="rl-note">${escapeHtml(entry.note)}</div>` : ""}
+      <span class="li-date">${fmtDate(it.when)}</span>
+      <div class="li-main">
+        <div class="li-type">${it.type}</div>
+        ${it.note ? `<div class="li-note">${escapeHtml(it.note)}</div>` : ""}
       </div>
-      <div style="display:flex; align-items:center; gap:6px;">
-        <span class="rl-time">${t.toLocaleTimeString([], {hour:"numeric", minute:"2-digit"})}</span>
-        <button class="rl-del" data-id="${entry.id}">✕</button>
-      </div>`;
+      <span class="li-val">${it.value}</span>
+      <button class="li-del" data-kind="${it.kind}" data-id="${it.id}">✕</button>`;
     list.appendChild(li);
   });
-  list.querySelectorAll(".rl-del").forEach(btn => {
+
+  list.querySelectorAll(".li-del").forEach(btn => {
     btn.addEventListener("click", () => {
-      logs = logs.filter(l => l.id !== btn.dataset.id);
-      save(STORE_KEYS.logs, logs);
-      renderRecent();
+      const { kind, id } = btn.dataset;
+      if (kind === "weight") {
+        weights = weights.filter(w => w.id !== id);
+        save(STORE_KEYS.weights, weights);
+        populateWeightSelect();   // default may change if the latest weight was removed
+      } else {
+        logs = logs.filter(l => l.id !== id);
+        save(STORE_KEYS.logs, logs);
+      }
+      renderLogs();
+      renderTimer();       // fasting phase + weekly streak recompute from remaining logs
+      drawWeightChart();   // trends stay in sync (guarded no-op when Trends is hidden)
+      drawFastChart();
     });
   });
 }
 function escapeHtml(s) {
   return s.replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 }
-renderRecent();
+renderLogs();
 
 /* ---------- Weight logging (on the Log tab) ---------- */
 const WEIGHT_MIN = 40, WEIGHT_MAX = 160;   // scroll-picker range (kg), 0.1 steps
@@ -399,7 +432,6 @@ document.getElementById("saveWeightBtn").addEventListener("click", () => {
 
 /* ---- chart helpers ---- */
 const AXIS = "#3A4757", GRID = "#2C3846", TICK = "#8B96A3";
-const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 
 function fmtDate(d) {
   return `${String(d.getDate()).padStart(2,"0")}-${MONTHS[d.getMonth()]}`;

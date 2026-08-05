@@ -268,28 +268,38 @@ main {
 
 .primary-btn.small { width: auto; padding: 10px 20px; }
 
-.recent-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
+/* ---- Logs tab ---- */
+.log-list { list-style: none; margin: 0; padding: 0; }
 
-.recent-list li {
+.log-item {
   display: flex;
-  justify-content: space-between;
   align-items: center;
+  gap: 10px;
   background: var(--ink-2);
   border-radius: 10px;
-  padding: 12px 14px;
+  padding: 11px 12px;
   margin-bottom: 8px;
 }
 
-.recent-list .rl-type { font-weight: 700; font-size: 13px; }
-.recent-list .rl-note { font-size: 12px; color: var(--muted); margin-top: 2px; }
-.recent-list .rl-time { font-size: 12px; color: var(--muted); }
-.recent-list .rl-del {
+.li-date {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  width: 52px;
+  flex: none;
+}
+.li-main { flex: 1; min-width: 0; }
+.li-type { font-weight: 700; font-size: 13px; }
+.li-note { font-size: 12px; color: var(--muted); margin-top: 2px; word-break: break-word; }
+.li-val {
+  font-size: 13px;
+  color: var(--cream);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.li-del {
   background: none; border: none; color: var(--muted);
-  font-size: 16px; padding: 4px 8px; cursor: pointer;
+  font-size: 16px; padding: 4px 6px; cursor: pointer; flex: none;
 }
 
 /* ---- Weight row (Log tab) ---- */
@@ -361,11 +371,11 @@ canvas { width: 100%; height: 210px; display: block; }
   flex-direction: column;
   align-items: center;
   gap: 3px;
-  font-size: 11px;
+  font-size: 10px;
   cursor: pointer;
 }
 
-.tab-icon { font-size: 18px; }
+.tab-icon { font-size: 17px; }
 
 .tab-btn.active { color: var(--turmeric); }
 

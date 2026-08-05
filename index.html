@@ -45,8 +45,9 @@
     </div>
   </section>
 
-  <!-- LOG -->
-  <section id="tab-log" class="tab">
+  <!-- ENTRIES -->
+  <section id="tab-entries" class="tab">
+    <h3 class="section-title" style="margin-top:8px">Meal input</h3>
     <div class="card">
       <div class="type-row" id="typeRow">
         <button class="type-btn active" data-type="Meal">Meal</button>
@@ -74,16 +75,19 @@
       <button id="saveLogBtn" class="primary-btn">Save entry</button>
     </div>
 
+    <h3 class="section-title">Weight input</h3>
     <div class="card">
-      <h3 class="section-title" style="margin-top:0">Log weight</h3>
       <div class="weight-row">
         <select id="weightSelect" class="weight-select"></select>
         <button id="saveWeightBtn" class="primary-btn small">Save</button>
       </div>
     </div>
+  </section>
 
-    <h3 class="section-title">Recent</h3>
-    <ul id="recentList" class="recent-list"></ul>
+  <!-- LOGS -->
+  <section id="tab-logs" class="tab">
+    <ul id="logList" class="log-list"></ul>
+    <div id="logsEmpty" class="empty-note">No entries yet.</div>
   </section>
 
   <!-- TRENDS -->
@@ -114,8 +118,11 @@
   <button class="tab-btn active" data-tab="timer">
     <span class="tab-icon">◔</span><span>Timer</span>
   </button>
-  <button class="tab-btn" data-tab="log">
-    <span class="tab-icon">✎</span><span>Log</span>
+  <button class="tab-btn" data-tab="entries">
+    <span class="tab-icon">✎</span><span>Entries</span>
+  </button>
+  <button class="tab-btn" data-tab="logs">
+    <span class="tab-icon">▤</span><span>Logs</span>
   </button>
   <button class="tab-btn" data-tab="trends">
     <span class="tab-icon">▲</span><span>Trends</span>
