@@ -186,11 +186,12 @@ function renderTimer() {
     label.textContent = "Fasting";
     label.style.color = "var(--chili)";
     ring.style.stroke = "var(--chili)";
+    const total = state.target * 3600000;
     const remaining = Math.max(0, state.goalAt - now);
+    const pctLeft = Math.round((remaining / total) * 100);
     countdown.textContent = formatHMS(remaining);
-    sub.textContent = `until your ${state.target}h goal`;
-    const elapsed = now - state.fastStart;
-    const frac = Math.min(1, Math.max(0, elapsed / (state.target * 3600000)));
+    sub.textContent = `${pctLeft}% left · until your ${state.target}h goal`;
+    const frac = Math.min(1, Math.max(0, (now - state.fastStart) / total));
     ring.style.strokeDashoffset = RING_CIRC * (1 - frac);
     nextMealRow.textContent = `Goal at ${state.goalAt.toLocaleTimeString([], {hour:"numeric", minute:"2-digit"})}`;
   } else if (state.phase === "goal") {
