@@ -17,68 +17,100 @@ function defaultSchedule() {
   // weekday: 0=Sun ... 6=Sat, matching Date.getDay()
   return Array.from({ length: 7 }, (_, weekday) => ({
     weekday,
-    enabled: true,
-    startMin: 12 * 60,   // 12:00pm
-    endMin: 20 * 60       // 8:00pm
+    targetHours: 16   // targeted fasting window, in hours
   }));
+}
+
+function clampHours(h) {
+  if (typeof h !== "number" || isNaN(h)) return 16;
+  return Math.min(23, Math.max(8, Math.round(h)));
+}
+
+// Convert any older start/end-time schedule to the new fasting-hours model.
+function migrateSchedule(saved) {
+  if (!Array.isArray(saved) || saved.length !== 7) return defaultSchedule();
+  return saved.map((d, i) => {
+    const weekday = typeof d.weekday === "number" ? d.weekday : i;
+    if (typeof d.targetHours === "number") {
+      return { weekday, targetHours: clampHours(d.targetHours) };
+    }
+    // old format: derive fasting hours from the eating window (24 - window length)
+    if (typeof d.startMin === "number" && typeof d.endMin === "number") {
+      return { weekday, targetHours: clampHours(24 - (d.endMin - d.startMin) / 60) };
+    }
+    return { weekday, targetHours: 16 };
+  });
 }
 
 let logs = load(STORE_KEYS.logs, []);
 let weights = load(STORE_KEYS.weights, []);
-let schedule = load(STORE_KEYS.schedule, defaultSchedule());
-if (schedule.length !== 7) { schedule = defaultSchedule(); save(STORE_KEYS.schedule, schedule); }
+let schedule = migrateSchedule(load(STORE_KEYS.schedule, defaultSchedule()));
+save(STORE_KEYS.schedule, schedule);
 
 function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
 
 /* ---------- Fasting state logic ---------- */
-function minutesToDate(baseDate, minutes) {
-  const d = new Date(baseDate);
-  d.setHours(0, 0, 0, 0);
-  d.setMinutes(minutes);
-  return d;
+function targetHoursFor(date) {
+  const s = schedule.find(x => x.weekday === date.getDay());
+  return s ? s.targetHours : 16;
 }
 
-function scheduleFor(date) {
-  return schedule.find(s => s.weekday === date.getDay());
-}
-
-function currentFastingState(now) {
-  const today = scheduleFor(now);
-  if (!today || !today.enabled) return null;
-
-  const eatingStart = minutesToDate(now, today.startMin);
-  const eatingEnd = minutesToDate(now, today.endMin);
-
-  if (now >= eatingStart && now < eatingEnd) {
-    return {
-      phase: "eating",
-      phaseStart: eatingStart,
-      windowEndsAt: eatingEnd,
-      nextEatingStart: eatingStart
-    };
-  } else if (now < eatingStart) {
-    // fasting, window opens later today; phase "started" at yesterday's eating end if available
-    const yesterday = new Date(now); yesterday.setDate(yesterday.getDate() - 1);
-    const ySched = scheduleFor(yesterday);
-    const phaseStart = ySched ? minutesToDate(yesterday, ySched.endMin) : minutesToDate(now, 0);
-    return {
-      phase: "fasting",
-      phaseStart,
-      windowEndsAt: eatingStart,
-      nextEatingStart: eatingStart
-    };
-  } else {
-    const tomorrow = new Date(now); tomorrow.setDate(tomorrow.getDate() + 1);
-    const tSched = scheduleFor(tomorrow);
-    if (!tSched || !tSched.enabled) return null;
-    const nextEatingStart = minutesToDate(tomorrow, tSched.startMin);
-    return {
-      phase: "fasting",
-      phaseStart: eatingEnd,
-      windowEndsAt: nextEatingStart,
-      nextEatingStart
-    };
+// Most recent fast-breaking log entry (Meal or Drink) at or before `now`.
+// Water and Electrolyte do not break a fast.
+function lastEatEntryBefore(now) {
+  let latest = null, latestT = null;
+  for (const l of logs) {
+    if (l.type !== "Meal" && l.type !== "Drink") continue;
+    const t = new Date(l.timestamp);
+    if (t <= now && (!latestT || t > latestT)) { latest = l; latestT = t; }
   }
+  return latest;
+}
+
+// If you tap "Started eating" but never tap "Ended eating", we don't want the
+// eating window to run forever. After this grace period with no end, assume a
+// normal short meal and close it with a fixed window (also catches the case
+// where the app was shut during those hours).
+const EAT_AUTOCLOSE_MS = 2 * 3600000;   // 2 hours with no "Ended eating"
+const EAT_ASSUMED_MS   = 30 * 60000;    // ...then treat the meal as 30 minutes
+
+// Writes an automatic "Ended eating" entry (30 min after the start) if a lone
+// "Started eating" marker has been open longer than the grace period.
+// Returns true if it added one. Idempotent — once closed it won't re-trigger.
+function autoCloseStaleEating() {
+  const nowMs = new Date().getTime();
+  const last = lastEatEntryBefore(new Date(nowMs));
+  if (!last || last.marker !== "start") return false;
+  const startMs = new Date(last.timestamp).getTime();
+  if (nowMs - startMs <= EAT_AUTOCLOSE_MS) return false;
+
+  const endT = new Date(startMs + EAT_ASSUMED_MS);
+  logs.unshift({ id: uid(), type: "Meal", marker: "end", note: "Ended eating (auto · 30m)", timestamp: endT.toISOString() });
+  save(STORE_KEYS.logs, logs);
+  return true;
+}
+
+// The fast rolls from your last meal. A "Started eating" marker with nothing
+// logged after it means you're actively in your eating window; anything else
+// (an "Ended eating" marker, a plain meal or drink) starts the fast clock.
+//   phases: none | eating | fasting | goal
+function rollingFastState(now) {
+  const last = lastEatEntryBefore(now);
+  if (!last) return { phase: "none" };
+  const lastTime = new Date(last.timestamp);
+
+  if (last.marker === "start") {
+    return { phase: "eating", eatingSince: lastTime };
+  }
+
+  const target = targetHoursFor(lastTime);
+  const goalAt = new Date(lastTime.getTime() + target * 3600000);
+  return {
+    phase: now < goalAt ? "fasting" : "goal",
+    fastStart: lastTime,
+    goalAt,
+    target
+  };
 }
 
 /* ---------- Streak ---------- */
@@ -88,23 +120,17 @@ function weeklyStreak(now) {
 
   let hit = 0, total = 0;
   for (let d = new Date(weekStart); d <= now; d.setDate(d.getDate() + 1)) {
-    const daySchedule = scheduleFor(d);
-    if (!daySchedule || !daySchedule.enabled) continue;
+    const target = targetHoursFor(d);
+    const times = logs
+      .filter(l => (l.type === "Meal" || l.type === "Drink") &&
+                   new Date(l.timestamp).toDateString() === d.toDateString())
+      .map(l => new Date(l.timestamp).getTime());
+    if (times.length === 0) continue;   // nothing eaten that day — don't count it
+
     total++;
-
-    const dayLogs = logs.filter(l => {
-      const t = new Date(l.timestamp);
-      return t.toDateString() === d.toDateString() && (l.type === "Meal" || l.type === "Drink");
-    });
-    if (dayLogs.length === 0) { total--; continue; }
-
-    const eatingStart = minutesToDate(d, daySchedule.startMin);
-    const eatingEnd = minutesToDate(d, daySchedule.endMin);
-    const allWithin = dayLogs.every(l => {
-      const t = new Date(l.timestamp);
-      return t >= eatingStart && t <= eatingEnd;
-    });
-    if (allWithin) hit++;
+    const eatingSpanHours = (Math.max(...times) - Math.min(...times)) / 3600000;
+    const fastingHours = 24 - eatingSpanHours;   // consistent with the Trends fasting chart
+    if (fastingHours >= target) hit++;
   }
   return { hit, total };
 }
@@ -115,9 +141,22 @@ document.getElementById("ringProgress").style.strokeDasharray = RING_CIRC;
 
 let lastPhase = null;
 
+function formatHMS(ms) {
+  const h = Math.floor(ms / 3600000);
+  const m = Math.floor((ms % 3600000) / 60000);
+  const s = Math.floor((ms % 60000) / 1000);
+  return `${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}`;
+}
+
+function updateStreakBadge(now) {
+  const streak = weeklyStreak(now);
+  document.getElementById("streakBadge").textContent = `${streak.hit}/${streak.total} this week`;
+}
+
 function renderTimer() {
+  if (autoCloseStaleEating()) renderRecent();
   const now = new Date();
-  const state = currentFastingState(now);
+  const state = rollingFastState(now);
   const ring = document.getElementById("ringProgress");
   const label = document.getElementById("phaseLabel");
   const countdown = document.getElementById("countdownText");
@@ -125,57 +164,81 @@ function renderTimer() {
   const nextMealRow = document.getElementById("nextMealRow");
   const noSchedule = document.getElementById("noScheduleNote");
 
-  if (!state) {
+  // No meals logged yet — nothing to count from.
+  if (state.phase === "none") {
     noSchedule.hidden = false;
-    label.textContent = "";
+    noSchedule.innerHTML = "No meals logged yet. Tap <strong>Ended eating</strong> below when you finish your last meal to start your fast.";
+    label.textContent = "Ready";
+    label.style.color = "var(--turmeric)";
     countdown.textContent = "--:--:--";
     sub.textContent = "";
     nextMealRow.textContent = "";
+    ring.style.stroke = "var(--turmeric)";
     ring.style.strokeDashoffset = RING_CIRC;
+    lastPhase = null;
+    updateStreakBadge(now);
     return;
   }
   noSchedule.hidden = true;
 
-  const isFasting = state.phase === "fasting";
-  label.textContent = isFasting ? "Fasting" : "Eating Window";
-  label.style.color = isFasting ? "var(--chili)" : "var(--leaf)";
-  ring.style.stroke = isFasting ? "var(--chili)" : "var(--leaf)";
-  sub.textContent = isFasting ? "until eating window opens" : "until fasting begins";
-
-  const remaining = Math.max(0, state.windowEndsAt - now);
-  const h = Math.floor(remaining / 3600000);
-  const m = Math.floor((remaining % 3600000) / 60000);
-  const s = Math.floor((remaining % 60000) / 1000);
-  countdown.textContent = `${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}`;
-
-  const totalPhase = state.windowEndsAt - state.phaseStart;
-  const elapsed = now - state.phaseStart;
-  const frac = totalPhase > 0 ? Math.min(1, Math.max(0, elapsed / totalPhase)) : 0;
-  ring.style.strokeDashoffset = RING_CIRC * (1 - frac);
-
-  if (isFasting) {
-    nextMealRow.textContent = `Next meal at ${state.nextEatingStart.toLocaleTimeString([], {hour:"numeric", minute:"2-digit"})}`;
-  } else {
+  if (state.phase === "fasting") {
+    label.textContent = "Fasting";
+    label.style.color = "var(--chili)";
+    ring.style.stroke = "var(--chili)";
+    const remaining = Math.max(0, state.goalAt - now);
+    countdown.textContent = formatHMS(remaining);
+    sub.textContent = `until your ${state.target}h goal`;
+    const elapsed = now - state.fastStart;
+    const frac = Math.min(1, Math.max(0, elapsed / (state.target * 3600000)));
+    ring.style.strokeDashoffset = RING_CIRC * (1 - frac);
+    nextMealRow.textContent = `Goal at ${state.goalAt.toLocaleTimeString([], {hour:"numeric", minute:"2-digit"})}`;
+  } else if (state.phase === "goal") {
+    // Goal reached — count up total time fasted until you start eating again.
+    label.textContent = "Eating Window";
+    label.style.color = "var(--leaf)";
+    ring.style.stroke = "var(--leaf)";
+    countdown.textContent = formatHMS(now - state.fastStart);
+    sub.textContent = `${state.target}h goal reached — tap Started eating when you eat`;
+    ring.style.strokeDashoffset = 0;   // full ring
     nextMealRow.textContent = "";
+  } else {
+    // Actively eating — count up the eating window until you tap Ended eating.
+    label.textContent = "Eating";
+    label.style.color = "var(--leaf)";
+    ring.style.stroke = "var(--leaf)";
+    countdown.textContent = formatHMS(now - state.eatingSince);
+    sub.textContent = "eating — tap Ended eating to begin your fast";
+    ring.style.strokeDashoffset = 0;   // full ring
+    nextMealRow.textContent = `Started ${state.eatingSince.toLocaleTimeString([], {hour:"numeric", minute:"2-digit"})}`;
   }
 
-  // notification on phase transition
-  if (lastPhase !== null && lastPhase !== state.phase) {
-    notifyPhaseChange(state.phase);
+  // Only notify on the passive fasting → goal-reached transition (the one you
+  // aren't watching for). Manual button taps don't self-notify.
+  if (lastPhase === "fasting" && state.phase === "goal") {
+    notifyGoalReached();
   }
   lastPhase = state.phase;
 
-  const streak = weeklyStreak(now);
-  document.getElementById("streakBadge").textContent = `${streak.hit}/${streak.total} this week`;
+  updateStreakBadge(now);
 }
 
-function notifyPhaseChange(phase) {
-  const title = phase === "eating" ? "Eating window open" : "Fasting started";
-  const body = phase === "eating" ? "Your fasting window is complete." : "Eating window closed — fast begins.";
+function notifyGoalReached() {
+  const title = "Fasting goal reached";
+  const body = "You hit your fasting target — enjoy your meal.";
   showToast(title);
   if ("Notification" in window && Notification.permission === "granted") {
     try { new Notification(title, { body }); } catch (e) {}
   }
+}
+
+// Timer-tab shortcuts: log an eating marker at the current time.
+function logEatMarker(marker) {
+  const note = marker === "start" ? "Started eating" : "Ended eating";
+  logs.unshift({ id: uid(), type: "Meal", marker, note, timestamp: new Date().toISOString() });
+  save(STORE_KEYS.logs, logs);
+  renderRecent();
+  renderTimer();
+  showToast(marker === "start" ? "Started eating" : "Fast started");
 }
 
 function showToast(msg) {
@@ -185,6 +248,9 @@ function showToast(msg) {
   clearTimeout(showToast._timer);
   showToast._timer = setTimeout(() => { t.hidden = true; }, 3000);
 }
+
+document.getElementById("startEatingBtn").addEventListener("click", () => logEatMarker("start"));
+document.getElementById("endEatingBtn").addEventListener("click", () => logEatMarker("end"));
 
 setInterval(renderTimer, 1000);
 renderTimer();
@@ -400,62 +466,34 @@ function drawBarChart(canvas, points, color) {
 
 /* ---------- Schedule tab ---------- */
 const DAY_NAMES = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+const HOUR_MIN = 8, HOUR_MAX = 23;   // selectable fasting-target range (hours)
 
-function minToTimeStr(min) {
-  const h = Math.floor(min/60), m = min%60;
-  return `${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}`;
-}
-function timeStrToMin(str) {
-  const [h,m] = str.split(":").map(Number);
-  return h*60+m;
+function hoursOptions(selected) {
+  let out = "";
+  for (let h = HOUR_MIN; h <= HOUR_MAX; h++) {
+    out += `<option value="${h}"${h === selected ? " selected" : ""}>${h} h</option>`;
+  }
+  return out;
 }
 
 function renderSchedule() {
   const container = document.getElementById("scheduleList");
   container.innerHTML = "";
   schedule.forEach(day => {
-    const card = document.createElement("div");
-    card.className = "day-card";
-    card.innerHTML = `
-      <div class="day-head">
-        <span class="day-name">${DAY_NAMES[day.weekday]}</span>
-        <label class="switch">
-          <input type="checkbox" ${day.enabled ? "checked" : ""} data-weekday="${day.weekday}" class="day-toggle">
-          <span class="switch-track"></span>
-        </label>
-      </div>
-      <div class="time-row" style="${day.enabled ? "" : "display:none"}">
-        <div class="time-field">
-          <label>Eating starts</label>
-          <input type="time" value="${minToTimeStr(day.startMin)}" data-weekday="${day.weekday}" class="start-input">
-        </div>
-        <div class="time-field">
-          <label>Eating ends</label>
-          <input type="time" value="${minToTimeStr(day.endMin)}" data-weekday="${day.weekday}" class="end-input">
-        </div>
-      </div>`;
-    container.appendChild(card);
+    const row = document.createElement("div");
+    row.className = "sched-row";
+    row.innerHTML = `
+      <span class="sched-day">${DAY_NAMES[day.weekday]}</span>
+      <select class="hours-select" data-weekday="${day.weekday}">
+        ${hoursOptions(day.targetHours)}
+      </select>`;
+    container.appendChild(row);
   });
 
-  container.querySelectorAll(".day-toggle").forEach(el => {
+  container.querySelectorAll(".hours-select").forEach(el => {
     el.addEventListener("change", () => {
       const d = schedule.find(s => s.weekday == el.dataset.weekday);
-      d.enabled = el.checked;
-      save(STORE_KEYS.schedule, schedule);
-      renderSchedule();
-    });
-  });
-  container.querySelectorAll(".start-input").forEach(el => {
-    el.addEventListener("change", () => {
-      const d = schedule.find(s => s.weekday == el.dataset.weekday);
-      d.startMin = timeStrToMin(el.value);
-      save(STORE_KEYS.schedule, schedule);
-    });
-  });
-  container.querySelectorAll(".end-input").forEach(el => {
-    el.addEventListener("change", () => {
-      const d = schedule.find(s => s.weekday == el.dataset.weekday);
-      d.endMin = timeStrToMin(el.value);
+      d.targetHours = parseInt(el.value, 10);
       save(STORE_KEYS.schedule, schedule);
     });
   });
