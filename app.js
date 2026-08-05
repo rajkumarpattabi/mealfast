@@ -24,7 +24,7 @@ function defaultSchedule() {
 
 function clampHours(h) {
   if (typeof h !== "number" || isNaN(h)) return 16;
-  return Math.min(23, Math.max(8, Math.round(h)));
+  return Math.min(36, Math.max(8, Math.round(h)));
 }
 
 // Convert any older start/end-time schedule to the new fasting-hours model.
@@ -149,6 +149,13 @@ function formatHMS(ms) {
   return `${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}`;
 }
 
+// Fast progress → ring colour. elapsedFrac 0 (just ate, 100% left) = red,
+// through orange/amber, to 1 (goal reached, 0% left and beyond) = green.
+function fastColor(elapsedFrac) {
+  const f = Math.min(1, Math.max(0, elapsedFrac));
+  return `hsl(${Math.round(f * 120)}, 68%, 47%)`;
+}
+
 function updateStreakBadge(now) {
   const streak = weeklyStreak(now);
   document.getElementById("streakBadge").textContent = `${streak.hit}/${streak.total} this week`;
@@ -183,22 +190,24 @@ function renderTimer() {
   noSchedule.hidden = true;
 
   if (state.phase === "fasting") {
-    label.textContent = "Fasting";
-    label.style.color = "var(--chili)";
-    ring.style.stroke = "var(--chili)";
     const total = state.target * 3600000;
     const remaining = Math.max(0, state.goalAt - now);
     const pctLeft = Math.round((remaining / total) * 100);
+    const frac = Math.min(1, Math.max(0, (now - state.fastStart) / total));
+    const col = fastColor(frac);   // red at 100% left → green as it nears the goal
+    label.textContent = "Fasting";
+    label.style.color = col;
+    ring.style.stroke = col;
     countdown.textContent = formatHMS(remaining);
     sub.textContent = `${pctLeft}% left · until your ${state.target}h goal`;
-    const frac = Math.min(1, Math.max(0, (now - state.fastStart) / total));
     ring.style.strokeDashoffset = RING_CIRC * (1 - frac);
     nextMealRow.textContent = `Goal at ${state.goalAt.toLocaleTimeString([], {hour:"numeric", minute:"2-digit"})}`;
   } else if (state.phase === "goal") {
     // Goal reached — count up total time fasted until you start eating again.
+    const green = fastColor(1);   // full green at 0% and beyond
     label.textContent = "Eating Window";
-    label.style.color = "var(--leaf)";
-    ring.style.stroke = "var(--leaf)";
+    label.style.color = green;
+    ring.style.stroke = green;
     countdown.textContent = formatHMS(now - state.fastStart);
     sub.textContent = `${state.target}h goal reached — tap Started eating when you eat`;
     ring.style.strokeDashoffset = 0;   // full ring
@@ -568,7 +577,7 @@ function drawFastChart() {
 
 /* ---------- Schedule tab ---------- */
 const DAY_NAMES = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
-const HOUR_MIN = 8, HOUR_MAX = 23;   // selectable fasting-target range (hours)
+const HOUR_MIN = 8, HOUR_MAX = 36;   // selectable fasting-target range (hours; fasts can span past midnight)
 
 function hoursOptions(selected) {
   let out = "";
