@@ -81,10 +81,14 @@ main {
   margin: 6px 0 0 0;
 }
 .greeting {
-  font-size: 19px;
+  /* Apple's elegant system cursive (matches the macOS "hello" vibe), with
+     graceful fallbacks on non-Apple devices. */
+  font-family: "Snell Roundhand", "Bradley Hand", "Segoe Script", cursive;
+  font-size: 28px;
   font-weight: 700;
   color: var(--cream);
-  letter-spacing: 0.01em;
+  line-height: 1.15;
+  -webkit-font-smoothing: antialiased;
 }
 .greeting .name { color: var(--turmeric); }
 .greeting-sub {
