@@ -454,8 +454,16 @@ renderLogs();
 /* ---------- Weight logging (on the Log tab) ---------- */
 const WEIGHT_MIN = 40, WEIGHT_MAX = 160;   // scroll-picker range (kg), 0.1 steps
 
+// Show/hide the chosen weight. Until you tap the field it stays blank (just a
+// placeholder); the default only appears once you open the picker.
+function setWeightPicked(picked) {
+  const field = document.getElementById("weightField");
+  if (picked) field.classList.add("picked"); else field.classList.remove("picked");
+}
+
 // Build the weight scroll wheel, preselected to your most recent weight (or 70)
-// so you only nudge it a little each time.
+// so opening it lands right at the value to confirm or nudge — but keep the
+// field blank until it's opened.
 function populateWeightSelect() {
   const sel = document.getElementById("weightSelect");
   const last = weights.length ? weights[weights.length - 1].weightKg : 70;
@@ -468,16 +476,23 @@ function populateWeightSelect() {
   }
   sel.innerHTML = out;
   sel.value = defStr;
+  setWeightPicked(false);   // reset to the blank placeholder state
 }
 populateWeightSelect();
 
+// Reveal the value as soon as the picker is opened (focus) or changed.
+document.getElementById("weightSelect").addEventListener("focus", () => setWeightPicked(true));
+document.getElementById("weightSelect").addEventListener("change", () => setWeightPicked(true));
+
 document.getElementById("saveWeightBtn").addEventListener("click", () => {
+  const field = document.getElementById("weightField");
+  if (!field.classList.contains("picked")) { showToast("Tap the field to set your weight"); return; }
   const val = parseFloat(document.getElementById("weightSelect").value);
   if (isNaN(val)) return;
   weights.push({ id: uid(), weightKg: val, timestamp: new Date().toISOString() });
   weights.sort((a,b) => new Date(a.timestamp) - new Date(b.timestamp));
   save(STORE_KEYS.weights, weights);
-  populateWeightSelect();   // default now reflects the just-saved weight
+  populateWeightSelect();   // resets to blank; default now reflects the saved weight
   drawWeightChart();        // safe if the Trends tab isn't visible (guarded below)
   showToast("Weight saved");
 });
