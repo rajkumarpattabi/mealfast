@@ -292,16 +292,19 @@ main {
   font-size: 16px; padding: 4px 8px; cursor: pointer;
 }
 
-/* ---- Trends tab ---- */
-.weight-row { display: flex; gap: 10px; }
-.weight-row input {
+/* ---- Weight row (Log tab) ---- */
+.weight-row { display: flex; gap: 10px; align-items: center; }
+.weight-select {
   flex: 1;
   background: var(--ink-3);
   border: none;
   border-radius: 10px;
   color: var(--cream);
-  padding: 10px 12px;
-  font-size: 14px;
+  padding: 11px 12px;
+  font-size: 15px;
+  font-weight: 600;
+  color-scheme: dark;
+  text-align: center;
 }
 
 canvas { width: 100%; height: 210px; display: block; }

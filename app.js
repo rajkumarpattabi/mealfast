@@ -366,15 +366,34 @@ function escapeHtml(s) {
 }
 renderRecent();
 
-/* ---------- Trends tab (weight is now logged from the Log tab) ---------- */
+/* ---------- Weight logging (on the Log tab) ---------- */
+const WEIGHT_MIN = 40, WEIGHT_MAX = 160;   // scroll-picker range (kg), 0.1 steps
+
+// Build the weight scroll wheel, preselected to your most recent weight (or 70)
+// so you only nudge it a little each time.
+function populateWeightSelect() {
+  const sel = document.getElementById("weightSelect");
+  const last = weights.length ? weights[weights.length - 1].weightKg : 70;
+  const def = Math.min(WEIGHT_MAX, Math.max(WEIGHT_MIN, Math.round(last * 10) / 10));
+  const defStr = def.toFixed(1);
+  let out = "";
+  for (let i = 0; i <= (WEIGHT_MAX - WEIGHT_MIN) * 10; i++) {
+    const s = (WEIGHT_MIN + i / 10).toFixed(1);
+    out += `<option value="${s}"${s === defStr ? " selected" : ""}>${s} kg</option>`;
+  }
+  sel.innerHTML = out;
+  sel.value = defStr;
+}
+populateWeightSelect();
+
 document.getElementById("saveWeightBtn").addEventListener("click", () => {
-  const val = parseFloat(document.getElementById("weightInput").value);
+  const val = parseFloat(document.getElementById("weightSelect").value);
   if (isNaN(val)) return;
   weights.push({ id: uid(), weightKg: val, timestamp: new Date().toISOString() });
   weights.sort((a,b) => new Date(a.timestamp) - new Date(b.timestamp));
   save(STORE_KEYS.weights, weights);
-  document.getElementById("weightInput").value = "";
-  drawWeightChart();   // safe if the Trends tab isn't visible (guarded below)
+  populateWeightSelect();   // default now reflects the just-saved weight
+  drawWeightChart();        // safe if the Trends tab isn't visible (guarded below)
   showToast("Weight saved");
 });
 
