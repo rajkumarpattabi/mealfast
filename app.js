@@ -653,6 +653,214 @@ function renderSchedule() {
 }
 renderSchedule();
 
+/* ---------- Backup: export / import (Schedule tab) ---------- */
+function exportData() {
+  const payload = {
+    app: "MealFast", version: 1, exportedAt: new Date().toISOString(),
+    logs, weights, schedule
+  };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const d = new Date();
+  const stamp = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `mealfast-backup-${stamp}.json`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  showToast("Backup exported");
+}
+
+// Replace all data from a parsed backup object. Returns true on success.
+function applyImportedData(data) {
+  const ok = data && (Array.isArray(data.logs) || Array.isArray(data.weights) || Array.isArray(data.schedule));
+  if (!ok) { showToast("Not a MealFast backup"); return false; }
+  logs = Array.isArray(data.logs) ? data.logs : [];
+  weights = Array.isArray(data.weights) ? data.weights : [];
+  schedule = migrateSchedule(Array.isArray(data.schedule) ? data.schedule : defaultSchedule());
+  save(STORE_KEYS.logs, logs);
+  save(STORE_KEYS.weights, weights);
+  save(STORE_KEYS.schedule, schedule);
+  renderLogs(); renderSchedule(); populateWeightSelect(); renderTimer();
+  drawWeightChart(); drawFastChart();
+  return true;
+}
+
+function importData(file) {
+  const reader = new FileReader();
+  reader.onload = () => {
+    let data;
+    try { data = JSON.parse(reader.result); }
+    catch (e) { showToast("Couldn't read that file"); return; }
+    if (!data || (!Array.isArray(data.logs) && !Array.isArray(data.weights) && !Array.isArray(data.schedule))) {
+      showToast("Not a MealFast backup"); return;
+    }
+    if (!confirm("Replace all current MealFast data with this backup? This cannot be undone.")) return;
+    if (applyImportedData(data)) showToast("Backup imported");
+  };
+  reader.onerror = () => showToast("Couldn't read that file");
+  reader.readAsText(file);
+}
+
+document.getElementById("exportBtn").addEventListener("click", exportData);
+document.getElementById("importFile").addEventListener("change", (e) => {
+  const file = e.target.files && e.target.files[0];
+  if (file) importData(file);
+  e.target.value = "";   // allow re-importing the same file name later
+});
+
+/* ---------- Google Drive backup ---------- */
+const GDRIVE_CLIENT_ID = "806898124104-agpuoau8aruceh5tte1hj079gjukr1r7.apps.googleusercontent.com";
+const GDRIVE_SCOPE = "https://www.googleapis.com/auth/drive.file";
+const GDRIVE_FILE_NAME = "mealfast-backup.json";
+const GD = { connected: "mf_gd_connected", last: "mf_gd_last", fileId: "mf_gd_fileid" };
+const BACKUP_INTERVAL_MS = 24 * 3600000;
+
+let gdTokenClient = null, gdAccessToken = null;
+function gdReady() { return typeof google !== "undefined" && google.accounts && google.accounts.oauth2; }
+
+// Acquire an access token, then run cb(token). interactive=true may show a prompt.
+function gdGetToken(interactive, cb, onFail) {
+  if (!gdReady()) { if (onFail) onFail("Google sign-in still loading — try again"); return; }
+  if (!gdTokenClient) {
+    gdTokenClient = google.accounts.oauth2.initTokenClient({
+      client_id: GDRIVE_CLIENT_ID, scope: GDRIVE_SCOPE, callback: () => {}
+    });
+  }
+  gdTokenClient.callback = (resp) => {
+    if (resp && resp.access_token) { gdAccessToken = resp.access_token; cb(resp.access_token); }
+    else if (onFail) onFail("no token");
+  };
+  gdTokenClient.error_callback = (err) => { if (onFail) onFail((err && err.type) || "auth error"); };
+  try { gdTokenClient.requestAccessToken({ prompt: interactive ? "consent" : "" }); }
+  catch (e) { if (onFail) onFail("popup blocked"); }
+}
+
+function gdBackupBody() {
+  return JSON.stringify({ app: "MealFast", version: 1, exportedAt: new Date().toISOString(), logs, weights, schedule });
+}
+
+function gdPatch(token, id, body, done, fail) {
+  fetch(`https://www.googleapis.com/upload/drive/v3/files/${id}?uploadType=media`, {
+    method: "PATCH",
+    headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
+    body
+  }).then(r => { if (!r.ok) throw 0; return r.json(); }).then(() => done()).catch(() => fail());
+}
+
+function gdCreate(token, body, done, fail) {
+  const boundary = "mfb" + Math.random().toString(36).slice(2);
+  const meta = JSON.stringify({ name: GDRIVE_FILE_NAME, mimeType: "application/json" });
+  const multipart =
+    `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${meta}\r\n` +
+    `--${boundary}\r\nContent-Type: application/json\r\n\r\n${body}\r\n--${boundary}--`;
+  fetch("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id", {
+    method: "POST",
+    headers: { Authorization: "Bearer " + token, "Content-Type": `multipart/related; boundary=${boundary}` },
+    body: multipart
+  }).then(r => { if (!r.ok) throw 0; return r.json(); })
+    .then(j => { if (j.id) localStorage.setItem(GD.fileId, j.id); done(); })
+    .catch(() => fail());
+}
+
+// Find the app's existing backup file id (survives a localStorage wipe), else null.
+function gdFindFile(token) {
+  const q = encodeURIComponent(`name='${GDRIVE_FILE_NAME}' and trashed=false`);
+  return fetch(`https://www.googleapis.com/drive/v3/files?q=${q}&spaces=drive&fields=files(id)`, {
+    headers: { Authorization: "Bearer " + token }
+  }).then(r => r.json()).then(j => (j.files && j.files[0] && j.files[0].id) || null);
+}
+
+function gdUpload(token, done, fail) {
+  const body = gdBackupBody();
+  const id = localStorage.getItem(GD.fileId);
+  const create = () => gdCreate(token, body, done, fail);
+  if (id) {
+    gdPatch(token, id, body, done, () => {           // stale id? drop it and re-resolve
+      localStorage.removeItem(GD.fileId);
+      gdFindFile(token).then(fid => fid ? gdPatch(token, fid, body, () => { localStorage.setItem(GD.fileId, fid); done(); }, create) : create()).catch(create);
+    });
+  } else {
+    gdFindFile(token).then(fid => fid ? gdPatch(token, fid, body, () => { localStorage.setItem(GD.fileId, fid); done(); }, create) : create()).catch(create);
+  }
+}
+
+function gdBackup(interactive) {
+  gdGetToken(interactive, (token) => {
+    gdUpload(token, () => {
+      localStorage.setItem(GD.last, new Date().toISOString());
+      localStorage.setItem(GD.connected, "1");
+      renderBackupStatus();
+      if (interactive) showToast("Backed up to Drive");
+    }, () => { if (interactive) showToast("Drive backup failed"); });
+  }, (msg) => { if (interactive) showToast("Drive: " + msg); });
+}
+
+function gdRestore() {
+  gdGetToken(true, (token) => {
+    const pull = (id) => fetch(`https://www.googleapis.com/drive/v3/files/${id}?alt=media`, {
+      headers: { Authorization: "Bearer " + token }
+    }).then(r => r.json()).then(data => {
+      if (!confirm("Replace all current data with the backup from Google Drive?")) return;
+      if (applyImportedData(data)) { renderBackupStatus(); showToast("Restored from Drive"); }
+    }).catch(() => showToast("Restore failed"));
+
+    const id = localStorage.getItem(GD.fileId);
+    if (id) pull(id);
+    else gdFindFile(token).then(fid => {
+      if (fid) { localStorage.setItem(GD.fileId, fid); pull(fid); }
+      else showToast("No Drive backup found");
+    }).catch(() => showToast("Restore failed"));
+  }, (msg) => showToast("Drive: " + msg));
+}
+
+// On open: if connected and it's been > 24h, quietly refresh the Drive backup.
+function gdMaybeAutoBackup() {
+  if (localStorage.getItem(GD.connected) !== "1") return;
+  const last = localStorage.getItem(GD.last);
+  const lastMs = last ? new Date(last).getTime() : 0;
+  if (Date.now() - lastMs < BACKUP_INTERVAL_MS) return;
+  gdBackup(false);
+}
+
+function renderBackupStatus() {
+  const area = document.getElementById("gdriveArea");
+  if (!area) return;
+  const connected = localStorage.getItem(GD.connected) === "1";
+  if (!connected) {
+    area.innerHTML = `<button id="gdConnectBtn" class="eat-btn primary">Connect Google Drive</button>`;
+    document.getElementById("gdConnectBtn").addEventListener("click", () => gdBackup(true));
+    return;
+  }
+  const last = localStorage.getItem(GD.last);
+  const when = last ? new Date(last).toLocaleString([], { day: "2-digit", month: "short", hour: "numeric", minute: "2-digit" }) : "never";
+  area.innerHTML = `
+    <div class="gd-status">Google Drive backup on · last: ${when}</div>
+    <div class="backup-row">
+      <button id="gdBackupBtn" class="eat-btn">Back up now</button>
+      <button id="gdRestoreBtn" class="eat-btn">Restore from Drive</button>
+    </div>
+    <button id="gdDisconnectBtn" class="gd-disconnect">Disconnect Drive</button>`;
+  document.getElementById("gdBackupBtn").addEventListener("click", () => gdBackup(true));
+  document.getElementById("gdRestoreBtn").addEventListener("click", gdRestore);
+  document.getElementById("gdDisconnectBtn").addEventListener("click", () => {
+    [GD.connected, GD.last, GD.fileId].forEach(k => localStorage.removeItem(k));
+    renderBackupStatus();
+  });
+}
+renderBackupStatus();
+
+// GIS script loads async; once ready, run the daily auto-backup check.
+(function waitForGis() {
+  let tries = 0;
+  const t = setInterval(() => {
+    if (gdReady()) { clearInterval(t); gdMaybeAutoBackup(); }
+    else if (++tries > 20) clearInterval(t);
+  }, 500);
+})();
+
 /* ---------- Service worker registration ---------- */
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {

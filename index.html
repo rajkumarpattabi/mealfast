@@ -10,6 +10,7 @@
 <link rel="manifest" href="manifest.json">
 <link rel="stylesheet" href="style.css">
 <title>MealFast</title>
+<script src="https://accounts.google.com/gsi/client" async></script>
 </head>
 <body>
 
@@ -110,6 +111,18 @@
     <h3 class="section-title" style="margin-top:8px">Fasting target per day</h3>
     <div id="scheduleList"></div>
     <p class="sched-hint">Your fast rolls from your last logged meal and counts up to this many hours.</p>
+
+    <h3 class="section-title">Backup — file</h3>
+    <div class="backup-row">
+      <button id="exportBtn" class="eat-btn">Export data</button>
+      <label class="eat-btn" for="importFile">Import data</label>
+      <input type="file" id="importFile" accept="application/json,.json" hidden>
+    </div>
+    <p class="sched-hint">Export saves all your logs, weights and schedule to a file. Import restores everything from one.</p>
+
+    <h3 class="section-title">Backup — Google Drive</h3>
+    <div id="gdriveArea" class="gdrive-area"></div>
+    <p class="sched-hint">Once connected, MealFast keeps an off-device copy in your Drive and refreshes it automatically about once a day when you open the app.</p>
   </section>
 
 </main>
