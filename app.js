@@ -181,6 +181,9 @@ const RING_CIRC = 2 * Math.PI * 88;
 document.getElementById("ringProgress").style.strokeDasharray = RING_CIRC;
 
 let lastPhase = null;
+// While fasting, the ring can emphasise time REMAINING (default) or time
+// ELAPSED ("Fasting"). Tapping the ring toggles it; the choice is remembered.
+let timerMode = localStorage.getItem("mf_timer_mode") === "elapsed" ? "elapsed" : "remaining";
 
 function formatHMS(ms) {
   const h = Math.floor(ms / 3600000);
@@ -211,6 +214,7 @@ function renderTimer() {
   const label = document.getElementById("phaseLabel");
   const countdown = document.getElementById("countdownText");
   const sub = document.getElementById("phaseSub");
+  const secondary = document.getElementById("phaseSecondary");
   const nextMealRow = document.getElementById("nextMealRow");
   const noSchedule = document.getElementById("noScheduleNote");
 
@@ -222,6 +226,7 @@ function renderTimer() {
     label.style.color = "var(--turmeric)";
     countdown.textContent = "--:--:--";
     sub.textContent = "";
+    secondary.textContent = "";
     nextMealRow.textContent = "";
     ring.style.stroke = "var(--turmeric)";
     ring.style.strokeDashoffset = RING_CIRC;
@@ -234,15 +239,23 @@ function renderTimer() {
   if (state.phase === "fasting") {
     const total = state.target * 3600000;
     const remaining = Math.max(0, state.goalAt - now);
+    const elapsed = Math.max(0, now - state.fastStart);
     const pctLeft = Math.round((remaining / total) * 100);
-    const frac = Math.min(1, Math.max(0, (now - state.fastStart) / total));
+    const frac = Math.min(1, Math.max(0, elapsed / total));
     const col = fastColor(frac);   // red at 100% left → green as it nears the goal
-    label.textContent = "Fasting";
     label.style.color = col;
     ring.style.stroke = col;
-    countdown.textContent = formatHMS(remaining);
-    sub.textContent = `${pctLeft}% left · until your ${state.target}h goal`;
     ring.style.strokeDashoffset = RING_CIRC * (1 - frac);
+    sub.textContent = `${pctLeft}% left · goal ${state.target}h`;
+    if (timerMode === "elapsed") {
+      label.textContent = "Fasting";
+      countdown.textContent = formatHMS(elapsed);
+      secondary.textContent = `${formatHMS(remaining)} remaining`;
+    } else {
+      label.textContent = "Remaining";
+      countdown.textContent = formatHMS(remaining);
+      secondary.textContent = `Fasted ${formatHMS(elapsed)}`;
+    }
     nextMealRow.textContent = `Goal at ${state.goalAt.toLocaleTimeString([], {hour:"numeric", minute:"2-digit"})}`;
   } else if (state.phase === "goal") {
     // Goal reached — count up total time fasted until you start eating again.
@@ -252,6 +265,7 @@ function renderTimer() {
     ring.style.stroke = green;
     countdown.textContent = formatHMS(now - state.fastStart);
     sub.textContent = `${state.target}h goal reached — tap Started eating when you eat`;
+    secondary.textContent = "";
     ring.style.strokeDashoffset = 0;   // full ring
     nextMealRow.textContent = "";
   } else {
@@ -261,6 +275,7 @@ function renderTimer() {
     ring.style.stroke = "var(--leaf)";
     countdown.textContent = formatHMS(now - state.eatingSince);
     sub.textContent = "eating — tap Ended eating to begin your fast";
+    secondary.textContent = "";
     ring.style.strokeDashoffset = 0;   // full ring
     nextMealRow.textContent = `Started ${state.eatingSince.toLocaleTimeString([], {hour:"numeric", minute:"2-digit"})}`;
   }
@@ -304,6 +319,13 @@ function showToast(msg) {
 
 document.getElementById("startEatingBtn").addEventListener("click", () => logEatMarker("start"));
 document.getElementById("endEatingBtn").addEventListener("click", () => logEatMarker("end"));
+
+// Tap the ring to flip between Remaining and Fasting (elapsed) emphasis.
+document.getElementById("ringWrap").addEventListener("click", () => {
+  timerMode = timerMode === "elapsed" ? "remaining" : "elapsed";
+  localStorage.setItem("mf_timer_mode", timerMode);
+  renderTimer();
+});
 
 setInterval(renderTimer, 1000);
 renderTimer();
@@ -634,6 +656,9 @@ function drawFastChart() {
 
 /* ---------- Schedule tab ---------- */
 const DAY_NAMES = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+// Sun→Sat: an even hue sweep, one matched saturation/lightness per day, so the
+// grid reads as one cohesive system rather than seven clashing colours.
+const DAY_HUES = [10, 61, 112, 163, 214, 265, 316];
 const HOUR_MIN = 8, HOUR_MAX = 36;   // selectable fasting-target range (hours; fasts can span past midnight)
 
 function hoursOptions(selected) {
@@ -648,11 +673,14 @@ function renderSchedule() {
   const container = document.getElementById("scheduleList");
   container.innerHTML = "";
   schedule.forEach(day => {
+    const hue = DAY_HUES[day.weekday];
     const cell = document.createElement("div");
     cell.className = "sched-cell";
+    cell.style.background = `hsl(${hue}, 30%, 15%)`;
     cell.innerHTML = `
-      <span class="sched-day">${DAY_NAMES[day.weekday].slice(0,3)}</span>
-      <select class="hours-select" data-weekday="${day.weekday}">
+      <span class="sched-day" style="color:hsl(${hue}, 70%, 72%)">${DAY_NAMES[day.weekday].slice(0,3)}</span>
+      <select class="hours-select" data-weekday="${day.weekday}"
+        style="color:hsl(${hue}, 62%, 80%); background:hsl(${hue}, 24%, 24%)">
         ${hoursOptions(day.targetHours)}
       </select>`;
     container.appendChild(cell);
