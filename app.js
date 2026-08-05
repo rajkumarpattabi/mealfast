@@ -91,6 +91,30 @@ function autoCloseStaleEating() {
   return true;
 }
 
+// A fast running past 40h almost always means a meal wasn't logged. When that
+// happens, record the stale fast as a capped 24h fast and restart the timer
+// from there. Loops so a very stale fast (app unopened for days) catches up in
+// one pass; returns true if anything was written.
+const FAST_AUTOCAP_MS = 40 * 3600000;   // ongoing fast beyond 40h triggers the cap
+const FAST_CAP_MS      = 24 * 3600000;  // ...recorded as a 24h fast, then restart
+
+function autoCapStaleFast() {
+  let changed = false;
+  for (let guard = 0; guard < 60; guard++) {
+    const nowMs = new Date().getTime();
+    const last = lastEatEntryBefore(new Date(nowMs));
+    if (!last || last.marker === "start") break;   // no fast running / actively eating
+    const startMs = new Date(last.timestamp).getTime();
+    if (nowMs - startMs <= FAST_AUTOCAP_MS) break;  // under 40h — leave it alone
+
+    const capT = new Date(startMs + FAST_CAP_MS);
+    logs.unshift({ id: uid(), type: "Meal", note: "Fast auto-capped (24h)", timestamp: capT.toISOString() });
+    save(STORE_KEYS.logs, logs);
+    changed = true;
+  }
+  return changed;
+}
+
 // The fast rolls from your last meal. A "Started eating" marker with nothing
 // logged after it means you're actively in your eating window; anything else
 // (an "Ended eating" marker, a plain meal or drink) starts the fast clock.
@@ -114,24 +138,40 @@ function rollingFastState(now) {
   };
 }
 
-/* ---------- Streak ---------- */
+/* ---------- Streak ----------
+   A day is "on target" if the fast that STARTED that day — measured from your
+   last meal of the day to the next time you ate — was at least that day's goal.
+   Measuring the real gap between eating events (not a single calendar day) lets
+   fasts run past midnight, so 24h+ targets are credited correctly. The day a
+   long fast spends entirely fasting has no eating logs and simply isn't counted. */
 function weeklyStreak(now) {
   const day = now.getDay();
   const weekStart = new Date(now); weekStart.setDate(now.getDate() - day); weekStart.setHours(0,0,0,0);
 
+  const eats = logs
+    .filter(l => l.type === "Meal" || l.type === "Drink")
+    .map(l => new Date(l.timestamp).getTime())
+    .sort((a,b) => a - b);
+  if (eats.length === 0) return { hit: 0, total: 0 };
+
+  const nowMs = now.getTime();
   let hit = 0, total = 0;
   for (let d = new Date(weekStart); d <= now; d.setDate(d.getDate() + 1)) {
-    const target = targetHoursFor(d);
-    const times = logs
-      .filter(l => (l.type === "Meal" || l.type === "Drink") &&
-                   new Date(l.timestamp).toDateString() === d.toDateString())
-      .map(l => new Date(l.timestamp).getTime());
-    if (times.length === 0) continue;   // nothing eaten that day — don't count it
+    const dayStr = d.toDateString();
+    const dayEats = eats.filter(t => new Date(t).toDateString() === dayStr);
+    if (dayEats.length === 0) continue;              // no fast started this day
 
-    total++;
-    const eatingSpanHours = (Math.max(...times) - Math.min(...times)) / 3600000;
-    const fastingHours = 24 - eatingSpanHours;   // consistent with the Trends fasting chart
-    if (fastingHours >= target) hit++;
+    const lastMeal = Math.max(...dayEats);            // the fast begins after the day's last meal
+    const targetMs = targetHoursFor(d) * 3600000;
+    const nextMeal = eats.find(t => t > lastMeal);    // when that fast was broken
+
+    if (nextMeal != null) {
+      total++;
+      if (nextMeal - lastMeal >= targetMs) hit++;     // completed fast met the goal
+    } else if (nowMs - lastMeal >= targetMs) {
+      total++; hit++;                                 // still fasting, but already past the goal
+    }
+    // else: current fast still under target — undetermined, don't count it yet
   }
   return { hit, total };
 }
@@ -162,7 +202,9 @@ function updateStreakBadge(now) {
 }
 
 function renderTimer() {
-  if (autoCloseStaleEating()) renderLogs();
+  let logsChanged = autoCloseStaleEating();
+  if (autoCapStaleFast()) logsChanged = true;
+  if (logsChanged) renderLogs();
   const now = new Date();
   const state = rollingFastState(now);
   const ring = document.getElementById("ringProgress");

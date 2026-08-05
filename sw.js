@@ -1,4 +1,4 @@
-const CACHE_NAME = "mealfast-v10";
+const CACHE_NAME = "mealfast-v12";
 const ASSETS = [
   "./",
   "./index.html",
