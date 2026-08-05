@@ -633,14 +633,14 @@ function renderSchedule() {
   const container = document.getElementById("scheduleList");
   container.innerHTML = "";
   schedule.forEach(day => {
-    const row = document.createElement("div");
-    row.className = "sched-row";
-    row.innerHTML = `
-      <span class="sched-day">${DAY_NAMES[day.weekday]}</span>
+    const cell = document.createElement("div");
+    cell.className = "sched-cell";
+    cell.innerHTML = `
+      <span class="sched-day">${DAY_NAMES[day.weekday].slice(0,3)}</span>
       <select class="hours-select" data-weekday="${day.weekday}">
         ${hoursOptions(day.targetHours)}
       </select>`;
-    container.appendChild(row);
+    container.appendChild(cell);
   });
 
   container.querySelectorAll(".hours-select").forEach(el => {
