@@ -366,7 +366,7 @@ function escapeHtml(s) {
 }
 renderRecent();
 
-/* ---------- Trends tab ---------- */
+/* ---------- Trends tab (weight is now logged from the Log tab) ---------- */
 document.getElementById("saveWeightBtn").addEventListener("click", () => {
   const val = parseFloat(document.getElementById("weightInput").value);
   if (isNaN(val)) return;
@@ -374,16 +374,106 @@ document.getElementById("saveWeightBtn").addEventListener("click", () => {
   weights.sort((a,b) => new Date(a.timestamp) - new Date(b.timestamp));
   save(STORE_KEYS.weights, weights);
   document.getElementById("weightInput").value = "";
-  drawWeightChart();
+  drawWeightChart();   // safe if the Trends tab isn't visible (guarded below)
   showToast("Weight saved");
 });
+
+/* ---- chart helpers ---- */
+const AXIS = "#3A4757", GRID = "#2C3846", TICK = "#8B96A3";
+const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+
+function fmtDate(d) {
+  return `${String(d.getDate()).padStart(2,"0")}-${MONTHS[d.getMonth()]}`;
+}
+
+// Round a min/max range out to "nice" tick boundaries for a readable axis.
+function niceScale(min, max, ticks) {
+  ticks = ticks || 4;
+  if (min === max) { min -= 1; max += 1; }
+  const rawStep = (max - min) / ticks;
+  const mag = Math.pow(10, Math.floor(Math.log10(rawStep)));
+  const norm = rawStep / mag;
+  const step = (norm < 1.5 ? 1 : norm < 3 ? 2 : norm < 7 ? 5 : 10) * mag;
+  return { min: Math.floor(min / step) * step, max: Math.ceil(max / step) * step, step };
+}
+
+// Size the canvas to its CSS box at device resolution so lines/text stay crisp.
+function prepCanvas(canvas, cssH) {
+  const dpr = window.devicePixelRatio || 1;
+  const cssW = canvas.clientWidth || 320;
+  canvas.width = Math.round(cssW * dpr);
+  canvas.height = Math.round(cssH * dpr);
+  const ctx = canvas.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, cssW, cssH);
+  ctx.font = "10px -apple-system, system-ui, sans-serif";
+  return { ctx, W: cssW, H: cssH };
+}
+
+// Draw Y grid + value labels and 45°-rotated X date labels. Returns scale fns.
+// mode "line": points sit at the plot edges; "bar": points sit at slot centers.
+function drawAxes(ctx, W, H, scale, xs, yUnit, mode) {
+  const padL = 40, padR = 12, padT = 12, padB = 42;
+  const plotW = W - padL - padR, plotH = H - padT - padB;
+  const n = xs.length;
+  const sx = mode === "bar"
+    ? i => padL + (plotW / n) * (i + 0.5)
+    : i => padL + (n <= 1 ? plotW / 2 : (i / (n - 1)) * plotW);
+  const sy = v => padT + plotH - ((v - scale.min) / (scale.max - scale.min || 1)) * plotH;
+
+  // Y gridlines + labels
+  ctx.textAlign = "right"; ctx.textBaseline = "middle";
+  for (let v = scale.min; v <= scale.max + 1e-9; v += scale.step) {
+    const y = sy(v);
+    ctx.strokeStyle = GRID; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(W - padR, y); ctx.stroke();
+    ctx.fillStyle = TICK;
+    const label = Number.isInteger(v) ? String(v) : v.toFixed(1);
+    ctx.fillText(label, padL - 6, y);
+  }
+  // axis lines
+  ctx.strokeStyle = AXIS; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(padL, padT); ctx.lineTo(padL, padT + plotH);
+  ctx.lineTo(W - padR, padT + plotH); ctx.stroke();
+
+  // Y unit
+  ctx.fillStyle = TICK; ctx.textAlign = "left"; ctx.textBaseline = "top";
+  ctx.fillText(yUnit, 4, 2);
+
+  // X date labels, rotated 45°, thinned so at most ~7 show
+  const stepEvery = Math.max(1, Math.ceil(xs.length / 7));
+  ctx.fillStyle = TICK; ctx.textAlign = "right"; ctx.textBaseline = "middle";
+  xs.forEach((d, i) => {
+    if (i % stepEvery !== 0 && i !== xs.length - 1) return;
+    ctx.save();
+    ctx.translate(sx(i), padT + plotH + 8);
+    ctx.rotate(-Math.PI / 4);
+    ctx.fillText(fmtDate(d), 0, 0);
+    ctx.restore();
+  });
+
+  return { sx, sy, padL, padR, padT, padB, plotW, plotH };
+}
 
 function drawWeightChart() {
   const canvas = document.getElementById("weightChart");
   const empty = document.getElementById("weightEmpty");
   if (weights.length === 0) { empty.hidden = false; canvas.style.display = "none"; return; }
   empty.hidden = true; canvas.style.display = "block";
-  drawLineChart(canvas, weights.map(w => ({ x: new Date(w.timestamp), y: w.weightKg })), "#D9A441");
+  if (canvas.clientWidth === 0) return;   // Trends tab hidden — will redraw on show
+
+  const pts = weights.map(w => ({ x: new Date(w.timestamp), y: w.weightKg }));
+  const ys = pts.map(p => p.y);
+  const scale = niceScale(Math.min(...ys), Math.max(...ys), 4);
+
+  const { ctx, W, H } = prepCanvas(canvas, 210);
+  const a = drawAxes(ctx, W, H, scale, pts.map(p => p.x), "kg", "line");
+
+  ctx.strokeStyle = "#D9A441"; ctx.lineWidth = 2; ctx.beginPath();
+  pts.forEach((p, i) => { const x = a.sx(i), y = a.sy(p.y); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); });
+  ctx.stroke();
+  ctx.fillStyle = "#D9A441";
+  pts.forEach((p, i) => { ctx.beginPath(); ctx.arc(a.sx(i), a.sy(p.y), 3, 0, Math.PI * 2); ctx.fill(); });
 }
 
 function drawFastChart() {
@@ -399,68 +489,28 @@ function drawFastChart() {
     if (!byDay[key]) byDay[key] = [];
     byDay[key].push(d);
   });
-  const points = Object.entries(byDay).map(([key, times]) => {
-    const min = new Date(Math.min(...times));
-    const max = new Date(Math.max(...times));
-    const eatingHours = (max - min) / 3600000;
+  const pts = Object.entries(byDay).map(([key, times]) => {
+    const eatingHours = (Math.max(...times) - Math.min(...times)) / 3600000;
     return { x: new Date(key), y: Math.max(0, 24 - eatingHours) };
   }).sort((a,b) => a.x - b.x);
 
-  if (points.length === 0) { empty.hidden = false; canvas.style.display = "none"; return; }
+  if (pts.length === 0) { empty.hidden = false; canvas.style.display = "none"; return; }
   empty.hidden = true; canvas.style.display = "block";
-  drawBarChart(canvas, points, "#C1683F");
-}
+  if (canvas.clientWidth === 0) return;
 
-function drawLineChart(canvas, points, color) {
-  const ctx = canvas.getContext("2d");
-  const w = canvas.width, h = canvas.height, pad = 24;
-  ctx.clearRect(0, 0, w, h);
-  if (points.length < 1) return;
-  const ys = points.map(p => p.y);
-  const minY = Math.min(...ys) - 1, maxY = Math.max(...ys) + 1;
-  const xs = points.map(p => p.x.getTime());
-  const minX = Math.min(...xs), maxX = Math.max(...xs) || minX + 1;
+  const maxY = Math.max(...pts.map(p => p.y), 1);
+  const scale = niceScale(0, maxY, 4);   // fasting hours start at 0
 
-  const sx = x => pad + ((x - minX) / (maxX - minX || 1)) * (w - pad*2);
-  const sy = y => h - pad - ((y - minY) / (maxY - minY || 1)) * (h - pad*2);
+  const { ctx, W, H } = prepCanvas(canvas, 210);
+  const a = drawAxes(ctx, W, H, scale, pts.map(p => p.x), "hours", "bar");
 
-  ctx.strokeStyle = "#2C3846";
-  ctx.lineWidth = 1;
-  ctx.beginPath(); ctx.moveTo(pad, h-pad); ctx.lineTo(w-pad, h-pad); ctx.stroke();
-
-  ctx.strokeStyle = color;
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  points.forEach((p, i) => {
-    const x = sx(p.x.getTime()), y = sy(p.y);
-    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-  });
-  ctx.stroke();
-
-  ctx.fillStyle = color;
-  points.forEach(p => {
-    ctx.beginPath();
-    ctx.arc(sx(p.x.getTime()), sy(p.y), 3, 0, Math.PI*2);
-    ctx.fill();
-  });
-}
-
-function drawBarChart(canvas, points, color) {
-  const ctx = canvas.getContext("2d");
-  const w = canvas.width, h = canvas.height, pad = 24;
-  ctx.clearRect(0, 0, w, h);
-  const maxY = Math.max(...points.map(p => p.y), 16);
-  const barW = (w - pad*2) / points.length * 0.6;
-  const step = (w - pad*2) / points.length;
-
-  ctx.strokeStyle = "#2C3846";
-  ctx.beginPath(); ctx.moveTo(pad, h-pad); ctx.lineTo(w-pad, h-pad); ctx.stroke();
-
-  ctx.fillStyle = color;
-  points.forEach((p, i) => {
-    const x = pad + step * i + (step - barW)/2;
-    const barH = (p.y / maxY) * (h - pad*2);
-    ctx.fillRect(x, h - pad - barH, barW, barH);
+  const slot = a.plotW / pts.length;
+  const barW = Math.min(slot * 0.6, 26);
+  ctx.fillStyle = "#C1683F";
+  pts.forEach((p, i) => {
+    const cx = a.sx(i);
+    const y = a.sy(p.y);
+    ctx.fillRect(cx - barW / 2, y, barW, (a.padT + a.plotH) - y);
   });
 }
 

@@ -74,12 +74,6 @@
       <button id="saveLogBtn" class="primary-btn">Save entry</button>
     </div>
 
-    <h3 class="section-title">Recent</h3>
-    <ul id="recentList" class="recent-list"></ul>
-  </section>
-
-  <!-- TRENDS -->
-  <section id="tab-trends" class="tab">
     <div class="card">
       <h3 class="section-title" style="margin-top:0">Log weight</h3>
       <div class="weight-row">
@@ -88,15 +82,21 @@
       </div>
     </div>
 
+    <h3 class="section-title">Recent</h3>
+    <ul id="recentList" class="recent-list"></ul>
+  </section>
+
+  <!-- TRENDS -->
+  <section id="tab-trends" class="tab">
     <div class="card">
       <h3 class="section-title" style="margin-top:0">Weight trend</h3>
-      <canvas id="weightChart" width="320" height="160"></canvas>
+      <canvas id="weightChart" width="320" height="210"></canvas>
       <div id="weightEmpty" class="empty-note">No weight entries yet.</div>
     </div>
 
     <div class="card">
       <h3 class="section-title" style="margin-top:0">Fasting window, last 14 days</h3>
-      <canvas id="fastChart" width="320" height="160"></canvas>
+      <canvas id="fastChart" width="320" height="210"></canvas>
       <div id="fastEmpty" class="empty-note">Log a few meals to see this trend.</div>
     </div>
   </section>
