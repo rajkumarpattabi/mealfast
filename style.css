@@ -69,11 +69,42 @@ main {
 }
 
 /* ---- Timer tab ---- */
+#tab-timer.tab.active {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+}
+.timer-center { margin: auto 0; }   /* centers the ring in the free space */
+
+.welcome {
+  text-align: center;
+  margin: 6px 0 0 0;
+}
+.greeting {
+  font-size: 19px;
+  font-weight: 700;
+  color: var(--cream);
+  letter-spacing: 0.01em;
+}
+.greeting .name { color: var(--turmeric); }
+.greeting-sub {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 3px;
+}
+.greeting-streak {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--turmeric);
+  opacity: 0.85;
+  margin-top: 2px;
+}
+
 .ring-wrap {
   position: relative;
   width: 240px;
   height: 240px;
-  margin: 28px auto 20px auto;
+  margin: 16px auto 18px auto;
   cursor: pointer;
   -webkit-user-select: none;
   user-select: none;
@@ -160,8 +191,9 @@ main {
   display: flex;
   gap: 10px;
   max-width: 340px;
-  margin: 4px auto 0 auto;
+  margin: 4px auto 8px auto;
   padding: 0 4px;
+  width: 100%;
 }
 
 .eat-btn {

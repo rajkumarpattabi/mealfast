@@ -25,19 +25,27 @@
 
   <!-- TIMER -->
   <section id="tab-timer" class="tab active">
-    <div class="ring-wrap" id="ringWrap">
-      <svg class="ring" viewBox="0 0 200 200">
-        <circle class="ring-track" cx="100" cy="100" r="88"></circle>
-        <circle id="ringProgress" class="ring-progress" cx="100" cy="100" r="88"></circle>
-      </svg>
-      <div class="ring-center">
-        <span id="phaseLabel" class="phase-label">Fasting</span>
-        <span id="countdownText" class="countdown-text">--:--:--</span>
-        <span id="phaseSub" class="phase-sub">until eating window opens</span>
-        <span id="phaseSecondary" class="phase-secondary"></span>
-      </div>
+    <div class="welcome">
+      <div id="greetingLine" class="greeting"></div>
+      <div id="greetingSub" class="greeting-sub"></div>
+      <div id="greetingStreak" class="greeting-streak"></div>
     </div>
-    <div id="nextMealRow" class="next-meal-row"></div>
+
+    <div class="timer-center">
+      <div class="ring-wrap" id="ringWrap">
+        <svg class="ring" viewBox="0 0 200 200">
+          <circle class="ring-track" cx="100" cy="100" r="88"></circle>
+          <circle id="ringProgress" class="ring-progress" cx="100" cy="100" r="88"></circle>
+        </svg>
+        <div class="ring-center">
+          <span id="phaseLabel" class="phase-label">Fasting</span>
+          <span id="countdownText" class="countdown-text">--:--:--</span>
+          <span id="phaseSub" class="phase-sub">until eating window opens</span>
+          <span id="phaseSecondary" class="phase-secondary"></span>
+        </div>
+      </div>
+      <div id="nextMealRow" class="next-meal-row"></div>
+    </div>
 
     <div class="eat-shortcut">
       <button id="startEatingBtn" class="eat-btn">Started eating</button>

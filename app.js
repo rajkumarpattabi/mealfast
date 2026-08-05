@@ -177,6 +177,61 @@ function weeklyStreak(now) {
 }
 
 /* ---------- Timer tab rendering ---------- */
+const USER_NAME = "Raj";   // shown in the greeting — change to taste
+
+function greetingWord(h) {
+  if (h < 12) return "Good morning";
+  if (h < 17) return "Good afternoon";
+  if (h < 21) return "Good evening";
+  return "Good night";
+}
+
+function relFast(ms) {
+  const h = Math.floor(ms / 3600000);
+  const m = Math.floor((ms % 3600000) / 60000);
+  return `${h}h ${String(m).padStart(2, "0")}m`;
+}
+
+// General intermittent-fasting milestones by hours elapsed (informational, not
+// medical advice).
+function fastMilestone(h) {
+  if (h < 4)  return "fed state — digesting";
+  if (h < 8)  return "blood sugar settling";
+  if (h < 12) return "glycogen burning";
+  if (h < 16) return "fat-burning zone";
+  if (h < 18) return "ketosis deepening";
+  if (h < 24) return "autophagy ramping up";
+  return "deep fast — autophagy peak";
+}
+
+function updateGreeting(now, state) {
+  document.getElementById("greetingLine").innerHTML =
+    `${greetingWord(now.getHours())}, <span class="name">${USER_NAME}</span>`;
+
+  let sub;
+  if (!state || state.phase === "none") {
+    sub = "Ready when you are — log your last meal to begin.";
+  } else if (state.phase === "fasting") {
+    const el = now - state.fastStart;
+    sub = `Fasting ${relFast(el)} · ${fastMilestone(el / 3600000)}`;
+  } else if (state.phase === "goal") {
+    const el = now - state.fastStart;
+    sub = `Fasting ${relFast(el)} · goal reached`;
+  } else {
+    sub = "Enjoy your eating window.";
+  }
+  document.getElementById("greetingSub").textContent = sub;
+
+  const s = weeklyStreak(now);
+  const streakEl = document.getElementById("greetingStreak");
+  if (s.total > 0) {
+    const tail = s.hit === s.total ? "perfect run — keep it up!" : "keep it going.";
+    streakEl.textContent = `${s.hit}/${s.total} on target this week — ${tail}`;
+  } else {
+    streakEl.textContent = "This week's streak starts with your next fast.";
+  }
+}
+
 const RING_CIRC = 2 * Math.PI * 88;
 document.getElementById("ringProgress").style.strokeDasharray = RING_CIRC;
 
@@ -210,6 +265,7 @@ function renderTimer() {
   if (logsChanged) renderLogs();
   const now = new Date();
   const state = rollingFastState(now);
+  updateGreeting(now, state);
   const ring = document.getElementById("ringProgress");
   const label = document.getElementById("phaseLabel");
   const countdown = document.getElementById("countdownText");
