@@ -161,6 +161,23 @@
 
 <div id="toast" class="toast" hidden></div>
 
+<div id="undoToast" class="undo-toast" hidden>
+  <span class="undo-msg">Entry deleted</span>
+  <button class="undo-btn">Undo</button>
+</div>
+
+<div id="editSheet" class="sheet-overlay" hidden>
+  <div class="sheet">
+    <div class="sheet-title" id="editTitle">Edit entry</div>
+    <div id="editBody"></div>
+    <div class="sheet-actions">
+      <button id="editDeleteBtn" class="sheet-btn danger">Delete</button>
+      <button id="editCancelBtn" class="sheet-btn">Cancel</button>
+      <button id="editSaveBtn" class="sheet-btn primary">Save</button>
+    </div>
+  </div>
+</div>
+
 <script src="app.js"></script>
 </body>
 </html>

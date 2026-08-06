@@ -495,6 +495,8 @@ function renderLogs() {
   items.forEach(it => {
     const li = document.createElement("li");
     li.className = "log-item";
+    li.dataset.kind = it.kind;
+    li.dataset.id = it.id;
     li.innerHTML = `
       <span class="li-date">${fmtDate(it.when)}</span>
       <div class="li-main">
@@ -502,27 +504,22 @@ function renderLogs() {
         ${it.note ? `<div class="li-note">${escapeHtml(it.note)}</div>` : ""}
       </div>
       <span class="li-val">${it.value}</span>
-      <button class="li-del" data-kind="${it.kind}" data-id="${it.id}">✕</button>`;
+      <span class="li-chev">›</span>`;
     list.appendChild(li);
   });
 
-  list.querySelectorAll(".li-del").forEach(btn => {
-    btn.addEventListener("click", () => {
-      const { kind, id } = btn.dataset;
-      if (kind === "weight") {
-        weights = weights.filter(w => w.id !== id);
-        save(STORE_KEYS.weights, weights);
-        populateWeightSelect();   // default may change if the latest weight was removed
-      } else {
-        logs = logs.filter(l => l.id !== id);
-        save(STORE_KEYS.logs, logs);
-      }
-      renderLogs();
-      renderTimer();       // fasting phase + weekly streak recompute from remaining logs
-      drawWeightChart();   // trends stay in sync (guarded no-op when Trends is hidden)
-      drawFastChart();
-    });
+  // Tap a row to edit or delete it.
+  list.querySelectorAll(".log-item").forEach(li => {
+    li.addEventListener("click", () => openEditSheet(li.dataset.kind, li.dataset.id));
   });
+}
+
+// Re-render everything that depends on logs/weights after an edit or delete.
+function afterEntryChange() {
+  renderLogs();
+  renderTimer();       // fasting phase + streak recompute from the changed data
+  drawWeightChart();   // trends stay in sync (guarded no-op when Trends is hidden)
+  drawFastChart();
 }
 function escapeHtml(s) {
   return s.replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -542,17 +539,21 @@ function setWeightPicked(picked) {
 // Build the weight scroll wheel, preselected to your most recent weight (or 70)
 // so opening it lands right at the value to confirm or nudge — but keep the
 // field blank until it's opened.
+function weightOptionsHtml(selectedStr) {
+  let out = "";
+  for (let i = 0; i <= (WEIGHT_MAX - WEIGHT_MIN) * 10; i++) {
+    const s = (WEIGHT_MIN + i / 10).toFixed(1);
+    out += `<option value="${s}"${s === selectedStr ? " selected" : ""}>${s} kg</option>`;
+  }
+  return out;
+}
+
 function populateWeightSelect() {
   const sel = document.getElementById("weightSelect");
   const last = weights.length ? weights[weights.length - 1].weightKg : 70;
   const def = Math.min(WEIGHT_MAX, Math.max(WEIGHT_MIN, Math.round(last * 10) / 10));
   const defStr = def.toFixed(1);
-  let out = "";
-  for (let i = 0; i <= (WEIGHT_MAX - WEIGHT_MIN) * 10; i++) {
-    const s = (WEIGHT_MIN + i / 10).toFixed(1);
-    out += `<option value="${s}"${s === defStr ? " selected" : ""}>${s} kg</option>`;
-  }
-  sel.innerHTML = out;
+  sel.innerHTML = weightOptionsHtml(defStr);
   sel.value = defStr;
   setWeightPicked(false);   // reset to the blank placeholder state
 }
@@ -573,6 +574,136 @@ document.getElementById("saveWeightBtn").addEventListener("click", () => {
   populateWeightSelect();   // resets to blank; default now reflects the saved weight
   drawWeightChart();        // safe if the Trends tab isn't visible (guarded below)
   showToast("Weight saved");
+});
+
+/* ---------- Edit / delete an entry (tap a row in the Logs tab) ---------- */
+let editingKind = null, editingId = null;
+
+function openEditSheet(kind, id) {
+  editingKind = kind; editingId = id;
+  const title = document.getElementById("editTitle");
+  const body = document.getElementById("editBody");
+
+  if (kind === "weight") {
+    const w = weights.find(x => x.id === id);
+    if (!w) return;
+    title.textContent = "Edit weight";
+    const cur = (Math.round(Number(w.weightKg) * 10) / 10).toFixed(1);
+    body.innerHTML = `
+      <label class="edit-label">Weight</label>
+      <select id="editWeight" class="edit-input">${weightOptionsHtml(cur)}</select>
+      <label class="edit-label">Date &amp; time</label>
+      <input type="datetime-local" id="editTime" class="edit-input" value="${toLocalInputValue(new Date(w.timestamp))}">`;
+  } else {
+    const l = logs.find(x => x.id === id);
+    if (!l) return;
+    title.textContent = "Edit entry";
+    const typeBtns = ["Meal","Drink","Water","Electrolyte"]
+      .map(t => `<button class="type-btn${t === l.type ? " active" : ""}" data-type="${t}">${t}</button>`).join("");
+    body.innerHTML = `
+      <div class="type-row" id="editTypeRow">${typeBtns}</div>
+      <label class="edit-label">Date &amp; time</label>
+      <input type="datetime-local" id="editTime" class="edit-input" value="${toLocalInputValue(new Date(l.timestamp))}">
+      <label class="edit-label">Note</label>
+      <input type="text" id="editNote" class="edit-input" placeholder="Note (optional)" value="${escapeHtml(l.note || "")}">`;
+    body.querySelector("#editTypeRow").addEventListener("click", (e) => {
+      const b = e.target.closest(".type-btn"); if (!b) return;
+      body.querySelectorAll(".type-btn").forEach(x => x.classList.remove("active"));
+      b.classList.add("active");
+    });
+  }
+  document.getElementById("editSheet").hidden = false;
+}
+
+function closeEditSheet() {
+  document.getElementById("editSheet").hidden = true;
+  editingKind = null; editingId = null;
+}
+
+function saveEdit() {
+  const timeVal = document.getElementById("editTime").value;
+  const ts = timeVal ? new Date(timeVal) : null;
+  if (!ts || isNaN(ts.getTime())) { showToast("Pick a valid date & time"); return; }
+
+  if (editingKind === "weight") {
+    const w = weights.find(x => x.id === editingId);
+    if (w) {
+      w.weightKg = parseFloat(document.getElementById("editWeight").value);
+      w.timestamp = ts.toISOString();
+      weights.sort((a,b) => new Date(a.timestamp) - new Date(b.timestamp));
+      save(STORE_KEYS.weights, weights);
+      populateWeightSelect();
+    }
+  } else {
+    const l = logs.find(x => x.id === editingId);
+    if (l) {
+      const active = document.querySelector("#editTypeRow .type-btn.active");
+      if (active) l.type = active.dataset.type;
+      l.note = document.getElementById("editNote").value.trim();
+      l.timestamp = ts.toISOString();
+      save(STORE_KEYS.logs, logs);
+    }
+  }
+  closeEditSheet();
+  afterEntryChange();
+  showToast("Changes saved");
+}
+
+function deleteEdit() {
+  let restore = null;
+  if (editingKind === "weight") {
+    const idx = weights.findIndex(x => x.id === editingId);
+    if (idx >= 0) {
+      const removed = weights[idx];
+      weights.splice(idx, 1);
+      save(STORE_KEYS.weights, weights);
+      populateWeightSelect();
+      restore = () => {
+        weights.push(removed);
+        weights.sort((a,b) => new Date(a.timestamp) - new Date(b.timestamp));
+        save(STORE_KEYS.weights, weights);
+        populateWeightSelect();
+        afterEntryChange();
+      };
+    }
+  } else {
+    const idx = logs.findIndex(x => x.id === editingId);
+    if (idx >= 0) {
+      const removed = logs[idx];
+      logs.splice(idx, 1);
+      save(STORE_KEYS.logs, logs);
+      restore = () => {
+        logs.splice(Math.min(idx, logs.length), 0, removed);
+        save(STORE_KEYS.logs, logs);
+        afterEntryChange();
+      };
+    }
+  }
+  closeEditSheet();
+  afterEntryChange();
+  if (restore) showUndoToast("Entry deleted", restore);
+}
+
+let undoTimer = null;
+function showUndoToast(msg, undoFn) {
+  const t = document.getElementById("undoToast");
+  t.querySelector(".undo-msg").textContent = msg;
+  t.hidden = false;
+  clearTimeout(undoTimer);
+  t.querySelector(".undo-btn").onclick = () => {
+    clearTimeout(undoTimer);
+    t.hidden = true;
+    undoFn();
+    showToast("Restored");
+  };
+  undoTimer = setTimeout(() => { t.hidden = true; }, 5000);
+}
+
+document.getElementById("editSaveBtn").addEventListener("click", saveEdit);
+document.getElementById("editDeleteBtn").addEventListener("click", deleteEdit);
+document.getElementById("editCancelBtn").addEventListener("click", closeEditSheet);
+document.getElementById("editSheet").addEventListener("click", (e) => {
+  if (e.target.id === "editSheet") closeEditSheet();   // tap the dimmed backdrop to dismiss
 });
 
 /* ---- chart helpers ---- */
