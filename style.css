@@ -601,6 +601,9 @@ canvas { width: 100%; height: 210px; display: block; }
 .insight-card { padding: 14px 16px; }
 .insight-title { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); font-weight: 700; }
 .insight-body { font-size: 14px; color: var(--cream); margin-top: 4px; font-weight: 600; }
+.insight-sep { color: var(--muted); margin: 0 2px; font-weight: 700; }
+.insight-body .wt-good { color: var(--leaf); }
+.insight-body .wt-bad { color: var(--chili); }
 
 /* ---- Consistency heatmap ---- */
 .heatmap { display: flex; gap: 3px; justify-content: center; }

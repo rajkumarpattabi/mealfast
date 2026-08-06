@@ -1206,7 +1206,18 @@ function renderInsight() {
   let wtxt = "";
   if (wkW.length >= 2) {
     const delta = Number(wkW[wkW.length - 1].weightKg) - Number(wkW[0].weightKg);
-    wtxt = ` · ${delta >= 0 ? "+" : "−"}${Math.abs(delta).toFixed(1)} kg`;
+    const val = `${delta >= 0 ? "+" : "−"}${Math.abs(delta).toFixed(1)} kg`;
+    // Colour vs. goal: green = met/exceeded weekly rate, red = wrong direction, else neutral.
+    let cls = "";
+    if (wtarget.dir === "reduce") {
+      if (delta > 0.05) cls = "wt-bad";                 // gaining while trying to reduce
+      else if (-delta >= wtarget.rate - 0.001) cls = "wt-good"; // met/exceeded weekly loss
+    } else if (wtarget.dir === "increase") {
+      if (delta < -0.05) cls = "wt-bad";                // losing while trying to gain
+      else if (delta >= wtarget.rate - 0.001) cls = "wt-good";  // met/exceeded weekly gain
+    }
+    const span = cls ? `<span class="${cls}">${val}</span>` : val;
+    wtxt = ` <span class="insight-sep">;</span> Weight ${span}`;
   }
   const avgTxt = n ? `avg fast ${(sum / n).toFixed(1)}h` : "no fasts yet";
   const adhTxt = total ? ` · ${hit}/${total} on target` : "";
