@@ -804,7 +804,7 @@ function prepCanvas(canvas, cssH) {
 // Draw Y grid + value labels and 45°-rotated X labels. Returns scale fns.
 // mode "line": points sit at the plot edges; "bar": points sit at slot centers.
 function drawAxes(ctx, W, H, scale, labels, yUnit, mode) {
-  const padL = 40, padR = 12, padT = 12, padB = 42;
+  const padL = 56, padR = 12, padT = 12, padB = 42;
   const plotW = W - padL - padR, plotH = H - padT - padB;
   const n = labels.length;
   const sx = mode === "bar"
@@ -824,8 +824,15 @@ function drawAxes(ctx, W, H, scale, labels, yUnit, mode) {
   ctx.beginPath(); ctx.moveTo(padL, padT); ctx.lineTo(padL, padT + plotH);
   ctx.lineTo(W - padR, padT + plotH); ctx.stroke();
 
-  ctx.fillStyle = TICK; ctx.textAlign = "left"; ctx.textBaseline = "top";
-  ctx.fillText(yUnit, 4, 2);
+  // Y-axis unit title: rotated vertical and centred, clear of the tick numbers.
+  ctx.save();
+  ctx.translate(12, padT + plotH / 2);
+  ctx.rotate(-Math.PI / 2);
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillStyle = TICK;
+  ctx.fillText(yUnit, 0, 0);
+  ctx.restore();
 
   const stepEvery = Math.max(1, Math.ceil(n / 7));
   ctx.fillStyle = TICK; ctx.textAlign = "right"; ctx.textBaseline = "middle";
@@ -926,6 +933,32 @@ function drawWeightChart() {
   const { ctx, W, H } = prepCanvas(canvas, 210);
   const a = drawAxes(ctx, W, H, scale, buckets.map(b => b.label), "kg", "line");
 
+  // Rolling average (trailing, up to 3 present points) — smooths daily noise.
+  const showAvg = present.length >= 3;
+  if (showAvg) {
+    const seen = [];
+    const avg = ys.map(v => {
+      if (v == null) return null;
+      seen.push(v);
+      const w = seen.slice(-3);
+      return w.reduce((s, x) => s + x, 0) / w.length;
+    });
+    ctx.save();
+    ctx.strokeStyle = "rgba(242,237,228,0.55)";
+    ctx.lineWidth = 2;
+    ctx.setLineDash([5, 4]);
+    ctx.beginPath();
+    let st = false;
+    avg.forEach((v, i) => {
+      if (v == null) return;
+      const x = a.sx(i), y = a.sy(v);
+      if (!st) { ctx.moveTo(x, y); st = true; } else ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // Raw weight line + points.
   ctx.strokeStyle = "#D9A441"; ctx.lineWidth = 2; ctx.beginPath();
   let started = false;
   ys.forEach((v, i) => {
@@ -936,6 +969,9 @@ function drawWeightChart() {
   ctx.stroke();
   ctx.fillStyle = "#D9A441";
   ys.forEach((v, i) => { if (v == null) return; ctx.beginPath(); ctx.arc(a.sx(i), a.sy(v), 3, 0, Math.PI * 2); ctx.fill(); });
+
+  const legend = document.getElementById("weightLegend");
+  if (legend) legend.hidden = !showAvg;
 }
 
 function drawFastChart() {

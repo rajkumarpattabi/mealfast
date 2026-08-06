@@ -555,6 +555,20 @@ select.edit-input { font-weight: 600; text-align: center; text-align-last: cente
 
 canvas { width: 100%; height: 210px; display: block; }
 
+.chart-legend {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  justify-content: center;
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 6px;
+}
+.lg-swatch { display: inline-block; width: 16px; height: 0; border-top-width: 2px; border-top-style: solid; margin-left: 8px; }
+.lg-swatch:first-child { margin-left: 0; }
+.lg-solid { border-top-color: var(--turmeric); }
+.lg-dash { border-top-style: dashed; border-top-color: rgba(242,237,228,0.7); }
+
 /* ---- Trends range selector ---- */
 .seg {
   display: flex;

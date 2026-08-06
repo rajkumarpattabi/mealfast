@@ -114,15 +114,19 @@
     </div>
 
     <div class="card">
-      <h3 class="section-title" style="margin-top:0">Weight trend</h3>
-      <canvas id="weightChart" width="320" height="210"></canvas>
-      <div id="weightEmpty" class="empty-note">No weight entries in this range.</div>
-    </div>
-
-    <div class="card">
       <h3 class="section-title" style="margin-top:0">Fasting</h3>
       <canvas id="fastChart" width="320" height="210"></canvas>
       <div id="fastEmpty" class="empty-note">Log a few meals to see this trend.</div>
+    </div>
+
+    <div class="card">
+      <h3 class="section-title" style="margin-top:0">Weight trend</h3>
+      <canvas id="weightChart" width="320" height="210"></canvas>
+      <div id="weightEmpty" class="empty-note">No weight entries in this range.</div>
+      <div id="weightLegend" class="chart-legend" hidden>
+        <span class="lg-swatch lg-solid"></span>weight
+        <span class="lg-swatch lg-dash"></span>rolling avg
+      </div>
     </div>
   </section>
 
