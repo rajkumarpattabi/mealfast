@@ -875,11 +875,19 @@ function trendBuckets(range, now) {
   return buckets;
 }
 
-// Average of weigh-ins inside a bucket, or null if none.
+// Bucket weight value: collapse each date to its HIGHEST weigh-in, then average
+// those per-date values across the bucket. null if none. (For the Week view each
+// bucket is a single date, so this is simply that day's highest weigh-in.)
 function weightAvgInRange(startMs, endMs) {
-  const vals = weights
-    .filter(w => { const t = new Date(w.timestamp).getTime(); return t >= startMs && t <= endMs; })
-    .map(w => Number(w.weightKg));
+  const byDate = {};
+  weights.forEach(w => {
+    const t = new Date(w.timestamp).getTime();
+    if (t < startMs || t > endMs) return;
+    const key = new Date(w.timestamp).toDateString();
+    const kg = Number(w.weightKg);
+    if (byDate[key] == null || kg > byDate[key]) byDate[key] = kg;
+  });
+  const vals = Object.values(byDate);
   return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
 }
 
@@ -996,11 +1004,26 @@ function drawFastChart() {
   const a = drawAxes(ctx, W, H, scale, buckets.map(b => b.label), "hours", "bar");
 
   const barW = Math.min((a.plotW / buckets.length) * 0.6, 26);
+  const base = a.padT + a.plotH;
   data.forEach((x, i) => {
     if (x == null) return;
+    const cx = a.sx(i), y = a.sy(x.value), barH = base - y;
     ctx.fillStyle = x.met ? fastColor(1) : fastColor(0);   // green if target met, red if short
-    const cx = a.sx(i), y = a.sy(x.value);
-    ctx.fillRect(cx - barW / 2, y, barW, (a.padT + a.plotH) - y);
+    ctx.fillRect(cx - barW / 2, y, barW, barH);
+
+    // Actual hours (rounded down), tiny, centred inside the bar.
+    ctx.font = "600 9px -apple-system, system-ui, sans-serif";
+    ctx.textAlign = "center";
+    const label = String(Math.floor(x.value));
+    if (barH >= 16) {
+      ctx.fillStyle = "#1B2430";       // dark, reads on the bright bar
+      ctx.textBaseline = "middle";
+      ctx.fillText(label, cx, (y + base) / 2);
+    } else {                            // bar too short — sit the number just above it
+      ctx.fillStyle = TICK;
+      ctx.textBaseline = "bottom";
+      ctx.fillText(label, cx, y - 2);
+    }
   });
 }
 
