@@ -817,11 +817,15 @@ const GDRIVE_FILE_NAME = "mealfast-backup.json";
 const GD = { connected: "mf_gd_connected", last: "mf_gd_last", fileId: "mf_gd_fileid" };
 const BACKUP_INTERVAL_MS = 24 * 3600000;
 
-let gdTokenClient = null, gdAccessToken = null;
+let gdTokenClient = null, gdAccessToken = null, gdTokenExpiry = 0;
 function gdReady() { return typeof google !== "undefined" && google.accounts && google.accounts.oauth2; }
 
-// Acquire an access token, then run cb(token). interactive=true may show a prompt.
+// Acquire an access token, then run cb(token).
+// - Reuses a still-valid cached token so repeat syncs don't re-prompt at all.
+// - Uses prompt:"" (never "consent"): Google shows the account/consent screen
+//   only the FIRST time (or if you revoke access) — afterwards it's silent.
 function gdGetToken(interactive, cb, onFail) {
+  if (gdAccessToken && Date.now() < gdTokenExpiry) { cb(gdAccessToken); return; }
   if (!gdReady()) { if (onFail) onFail("Google sign-in still loading — try again"); return; }
   if (!gdTokenClient) {
     gdTokenClient = google.accounts.oauth2.initTokenClient({
@@ -829,11 +833,15 @@ function gdGetToken(interactive, cb, onFail) {
     });
   }
   gdTokenClient.callback = (resp) => {
-    if (resp && resp.access_token) { gdAccessToken = resp.access_token; cb(resp.access_token); }
-    else if (onFail) onFail("no token");
+    if (resp && resp.access_token) {
+      gdAccessToken = resp.access_token;
+      const ttl = (resp.expires_in ? resp.expires_in * 1000 : 3600000) - 60000; // 1-min safety buffer
+      gdTokenExpiry = Date.now() + Math.max(0, ttl);
+      cb(resp.access_token);
+    } else if (onFail) onFail("no token");
   };
   gdTokenClient.error_callback = (err) => { if (onFail) onFail((err && err.type) || "auth error"); };
-  try { gdTokenClient.requestAccessToken({ prompt: interactive ? "consent" : "" }); }
+  try { gdTokenClient.requestAccessToken({ prompt: "" }); }
   catch (e) { if (onFail) onFail("popup blocked"); }
 }
 
