@@ -523,6 +523,7 @@ select.edit-input { font-weight: 600; text-align: center; text-align-last: cente
 .weight-row { display: flex; gap: 10px; align-items: center; }
 
 .weight-field { position: relative; flex: 1; }
+.weight-field-full { display: block; width: 100%; }
 
 .weight-select {
   width: 100%;

@@ -81,11 +81,13 @@
 
     <h3 class="section-title">Weight input</h3>
     <div class="card">
-      <div class="weight-row">
-        <div id="weightField" class="weight-field">
-          <select id="weightSelect" class="weight-select"></select>
-          <span id="weightPlaceholder" class="weight-placeholder">Tap to set weight</span>
-        </div>
+      <div id="weightField" class="weight-field weight-field-full">
+        <select id="weightSelect" class="weight-select"></select>
+        <span id="weightPlaceholder" class="weight-placeholder">Tap to set weight</span>
+      </div>
+      <div class="exact-wrap" style="margin-top:10px">
+        <input type="date" id="weightDate" class="exact-input">
+        <input type="time" id="weightTime" class="exact-input">
         <button id="saveWeightBtn" class="primary-btn small">Save</button>
       </div>
     </div>

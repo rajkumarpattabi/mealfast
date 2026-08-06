@@ -605,6 +605,13 @@ function weightOptionsHtml(selectedStr) {
   return out;
 }
 
+// Reset the weight date/time inputs to "now".
+function resetWeightDateTime() {
+  const now = new Date();
+  document.getElementById("weightDate").value = toDateInput(now);
+  document.getElementById("weightTime").value = toTimeInput(now);
+}
+
 function populateWeightSelect() {
   const sel = document.getElementById("weightSelect");
   const last = weights.length ? weights[weights.length - 1].weightKg : 70;
@@ -613,6 +620,7 @@ function populateWeightSelect() {
   sel.innerHTML = weightOptionsHtml(defStr);
   sel.value = defStr;
   setWeightPicked(false);   // reset to the blank placeholder state
+  resetWeightDateTime();
 }
 populateWeightSelect();
 
@@ -625,7 +633,11 @@ document.getElementById("saveWeightBtn").addEventListener("click", () => {
   if (!field.classList.contains("picked")) { showToast("Tap the field to set your weight"); return; }
   const val = parseFloat(document.getElementById("weightSelect").value);
   if (isNaN(val)) return;
-  weights.push({ id: uid(), weightKg: val, timestamp: new Date().toISOString() });
+  const dv = document.getElementById("weightDate").value;
+  const tv = document.getElementById("weightTime").value;
+  const when = (dv && tv) ? new Date(`${dv}T${tv}`) : new Date();
+  if (isNaN(when.getTime())) { showToast("Enter a valid date & time"); return; }
+  weights.push({ id: uid(), weightKg: val, timestamp: when.toISOString() });
   weights.sort((a,b) => new Date(a.timestamp) - new Date(b.timestamp));
   save(STORE_KEYS.weights, weights);
   populateWeightSelect();   // resets to blank; default now reflects the saved weight
