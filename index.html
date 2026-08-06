@@ -53,21 +53,14 @@
     </div>
 
     <div id="noScheduleNote" class="empty-note" hidden>
-      No schedule set for today. Go to the <strong>Schedule</strong> tab to set your eating window.
+      No schedule set for today. Go to the <strong>Targets</strong> tab to set your eating window.
     </div>
   </section>
 
   <!-- ENTRIES -->
   <section id="tab-entries" class="tab">
-    <h3 class="section-title" style="margin-top:8px">Meal input</h3>
+    <h3 class="section-title" style="margin-top:8px">Log meal / drink</h3>
     <div class="card">
-      <div class="type-row" id="typeRow">
-        <button class="type-btn active" data-type="Meal">Meal</button>
-        <button class="type-btn" data-type="Drink">Drink</button>
-        <button class="type-btn" data-type="Water">Water</button>
-        <button class="type-btn" data-type="Electrolyte">Electrolyte</button>
-      </div>
-
       <div class="quick-row" id="quickRow">
         <button class="quick-btn" data-min="0">Now</button>
         <button class="quick-btn" data-min="15">15m ago</button>
@@ -77,14 +70,17 @@
 
       <label class="exact-toggle">
         <input type="checkbox" id="exactTimeToggle">
-        <span>Set exact time</span>
+        <span>Set exact date &amp; time</span>
       </label>
-      <input type="datetime-local" id="exactTimeInput" class="exact-input" hidden>
+      <div id="exactWrap" class="exact-wrap" hidden>
+        <input type="date" id="exactDate" class="exact-input">
+        <input type="time" id="exactTime" class="exact-input">
+      </div>
       <div id="selectedTimeDisplay" class="selected-time"></div>
 
       <input type="text" id="noteInput" class="note-input" placeholder="Note (optional) — e.g. meen kuzhambu + ragi">
 
-      <button id="saveLogBtn" class="primary-btn">Save entry</button>
+      <button id="saveLogBtn" class="primary-btn">Log meal / drink</button>
     </div>
 
     <h3 class="section-title">Weight input</h3>
@@ -107,6 +103,8 @@
 
   <!-- TRENDS -->
   <section id="tab-trends" class="tab">
+    <div id="insightCard" class="card insight-card" hidden></div>
+
     <div class="seg" id="trendRange">
       <button class="seg-btn active" data-range="week">Week</button>
       <button class="seg-btn" data-range="month">Month</button>
@@ -124,17 +122,43 @@
       <canvas id="weightChart" width="320" height="210"></canvas>
       <div id="weightEmpty" class="empty-note">No weight entries in this range.</div>
       <div id="weightLegend" class="chart-legend" hidden>
-        <span class="lg-swatch lg-solid"></span>weight
-        <span class="lg-swatch lg-dash"></span>rolling avg
+        <span class="lg-item"><span class="lg-swatch lg-solid"></span>weight</span>
+        <span class="lg-item lg-item-avg"><span class="lg-swatch lg-dash"></span>rolling avg</span>
+        <span class="lg-item lg-item-target"><span class="lg-swatch lg-target"></span>target</span>
+      </div>
+      <div id="weightStatus" class="weight-status" hidden></div>
+    </div>
+
+    <div class="card">
+      <h3 class="section-title" style="margin-top:0">Consistency</h3>
+      <div id="heatmap" class="heatmap"></div>
+      <div class="heat-legend">
+        <span class="hl-swatch hl-red"></span>missed
+        <span class="hl-swatch hl-green"></span>on target
+        <span class="hl-swatch hl-none"></span>no fast
       </div>
     </div>
   </section>
 
-  <!-- SCHEDULE -->
+  <!-- TARGETS (Fasting + Weight) -->
   <section id="tab-schedule" class="tab">
     <h3 class="section-title" style="margin-top:8px">Fasting target per day</h3>
     <div id="scheduleList"></div>
     <p class="sched-hint">Your fast rolls from your last logged meal and counts up to this many hours.</p>
+
+    <h3 class="section-title">Weight target</h3>
+    <div class="card">
+      <div class="wtarget-row">
+        <select id="wtDir" class="wtarget-select">
+          <option value="off">Off</option>
+          <option value="reduce">Reduce</option>
+          <option value="increase">Increase</option>
+        </select>
+        <select id="wtRate" class="wtarget-select"></select>
+        <span class="wtarget-unit">kg / week</span>
+      </div>
+      <p id="wtBase" class="sched-hint"></p>
+    </div>
 
     <h3 class="section-title">Backup — file</h3>
     <div class="backup-row">
@@ -168,7 +192,7 @@
     <span class="tab-icon">▲</span><span>Trends</span>
   </button>
   <button class="tab-btn" data-tab="schedule">
-    <span class="tab-icon">▦</span><span>Schedule</span>
+    <span class="tab-icon">▦</span><span>Targets</span>
   </button>
 </nav>
 

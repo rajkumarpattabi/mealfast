@@ -1,5 +1,5 @@
 /* ---------- Storage helpers (all data stays in this browser, on this device) ---------- */
-const STORE_KEYS = { logs: "mf_logs", weights: "mf_weights", schedule: "mf_schedule" };
+const STORE_KEYS = { logs: "mf_logs", weights: "mf_weights", schedule: "mf_schedule", wtarget: "mf_wtarget" };
 const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 
 function load(key, fallback) {
@@ -47,6 +47,8 @@ let logs = load(STORE_KEYS.logs, []);
 let weights = load(STORE_KEYS.weights, []);
 let schedule = migrateSchedule(load(STORE_KEYS.schedule, defaultSchedule()));
 save(STORE_KEYS.schedule, schedule);
+// Weight target: { dir: "off"|"reduce"|"increase", rate: kg per week }
+let wtarget = load(STORE_KEYS.wtarget, { dir: "off", rate: 0.5 });
 
 function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
 
@@ -464,24 +466,15 @@ document.querySelectorAll(".tab-btn").forEach(btn => {
     document.querySelectorAll(".tab").forEach(s => s.classList.remove("active"));
     btn.classList.add("active");
     document.getElementById("tab-" + btn.dataset.tab).classList.add("active");
-    if (btn.dataset.tab === "trends") { drawWeightChart(); drawFastChart(); }
-    if (btn.dataset.tab === "schedule") { renderSchedule(); renderBackupStatus(); }
+    if (btn.dataset.tab === "trends") { renderInsight(); drawWeightChart(); drawFastChart(); renderHeatmap(); }
+    if (btn.dataset.tab === "schedule") { renderSchedule(); renderWeightTarget(); renderBackupStatus(); }
     if (btn.dataset.tab === "logs") { renderLogs(); }
     if (btn.dataset.tab === "entries") { populateWeightSelect(); }
   });
 });
 
-/* ---------- Log tab ---------- */
-let selectedType = "Meal";
+/* ---------- Entries tab: log a meal / drink ---------- */
 let selectedTime = new Date();
-
-document.getElementById("typeRow").addEventListener("click", (e) => {
-  const b = e.target.closest(".type-btn");
-  if (!b) return;
-  document.querySelectorAll(".type-btn").forEach(x => x.classList.remove("active"));
-  b.classList.add("active");
-  selectedType = b.dataset.type;
-});
 
 document.getElementById("quickRow").addEventListener("click", (e) => {
   const b = e.target.closest(".quick-btn");
@@ -489,48 +482,63 @@ document.getElementById("quickRow").addEventListener("click", (e) => {
   const mins = parseInt(b.dataset.min, 10);
   selectedTime = new Date(Date.now() - mins * 60000);
   document.getElementById("exactTimeToggle").checked = false;
-  document.getElementById("exactTimeInput").hidden = true;
+  document.getElementById("exactWrap").hidden = true;
   updateSelectedTimeDisplay();
 });
 
+// "Set exact date & time" reveals separate date and time pickers.
 document.getElementById("exactTimeToggle").addEventListener("change", (e) => {
-  const input = document.getElementById("exactTimeInput");
-  input.hidden = !e.target.checked;
+  const wrap = document.getElementById("exactWrap");
+  wrap.hidden = !e.target.checked;
   if (e.target.checked) {
-    input.value = toLocalInputValue(selectedTime);
+    document.getElementById("exactDate").value = toDateInput(selectedTime);
+    document.getElementById("exactTime").value = toTimeInput(selectedTime);
   } else {
-    updateSelectedTimeDisplay();
+    selectedTime = new Date();
   }
-});
-
-document.getElementById("exactTimeInput").addEventListener("change", (e) => {
-  selectedTime = new Date(e.target.value);
   updateSelectedTimeDisplay();
 });
 
-function toLocalInputValue(date) {
-  const pad = n => String(n).padStart(2, "0");
-  return `${date.getFullYear()}-${pad(date.getMonth()+1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+function readExactInputs() {
+  const dv = document.getElementById("exactDate").value;
+  const tv = document.getElementById("exactTime").value;
+  if (!dv || !tv) return;
+  const d = new Date(`${dv}T${tv}`);
+  if (!isNaN(d.getTime())) { selectedTime = d; updateSelectedTimeDisplay(); }
+}
+document.getElementById("exactDate").addEventListener("change", readExactInputs);
+document.getElementById("exactTime").addEventListener("change", readExactInputs);
+
+function toDateInput(d) {
+  const p = n => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`;
+}
+function toTimeInput(d) {
+  const p = n => String(n).padStart(2, "0");
+  return `${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+function toLocalInputValue(date) {   // used by the edit sheet's datetime-local
+  return `${toDateInput(date)}T${toTimeInput(date)}`;
 }
 
 function updateSelectedTimeDisplay() {
   document.getElementById("selectedTimeDisplay").textContent =
-    "Logging at " + selectedTime.toLocaleTimeString([], {hour:"numeric", minute:"2-digit"});
+    "Logging at " + selectedTime.toLocaleString([], { month: "short", day: "2-digit", hour: "numeric", minute: "2-digit" });
 }
 updateSelectedTimeDisplay();
 
 document.getElementById("saveLogBtn").addEventListener("click", () => {
   const note = document.getElementById("noteInput").value.trim();
-  logs.unshift({ id: uid(), type: selectedType, note, timestamp: selectedTime.toISOString() });
+  logs.unshift({ id: uid(), type: "Meal", note, timestamp: selectedTime.toISOString() });
   save(STORE_KEYS.logs, logs);
   document.getElementById("noteInput").value = "";
   selectedTime = new Date();
   document.getElementById("exactTimeToggle").checked = false;
-  document.getElementById("exactTimeInput").hidden = true;
+  document.getElementById("exactWrap").hidden = true;
   updateSelectedTimeDisplay();
   renderLogs();
   renderTimer();      // a new meal changes the current fast immediately
-  showToast("Saved");
+  showToast("Logged");
 });
 
 // The Logs tab: every meal/drink/water/electrolyte log (including the Timer-tab
@@ -937,9 +945,29 @@ function drawWeightChart() {
   empty.hidden = true; canvas.style.display = "block";
   if (canvas.clientWidth === 0) return;   // Trends tab hidden — will redraw on show
 
-  const scale = niceScale(Math.min(...present), Math.max(...present), 4);
+  // Weight target trajectory from the first weigh-in (baseline) at the set rate.
+  const wt = weightTargetLine(buckets);   // { active, targetYs, baseKg, targetToday } | null
+  const scaleVals = present.slice();
+  if (wt) buckets.forEach((b, i) => { if (wt.targetYs[i] != null) scaleVals.push(wt.targetYs[i]); });
+
+  const scale = niceScale(Math.min(...scaleVals), Math.max(...scaleVals), 4);
   const { ctx, W, H } = prepCanvas(canvas, 210);
   const a = drawAxes(ctx, W, H, scale, buckets.map(b => b.label), "kg", "line");
+
+  // Target line (leaf green).
+  if (wt) {
+    ctx.save();
+    ctx.strokeStyle = "#6E9B72"; ctx.lineWidth = 2; ctx.setLineDash([2, 3]);
+    ctx.beginPath();
+    let stt = false;
+    wt.targetYs.forEach((v, i) => {
+      if (v == null) return;
+      const x = a.sx(i), y = a.sy(v);
+      if (!stt) { ctx.moveTo(x, y); stt = true; } else ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+    ctx.restore();
+  }
 
   // Rolling average (trailing, up to 3 present points) — smooths daily noise.
   const showAvg = present.length >= 3;
@@ -978,8 +1006,41 @@ function drawWeightChart() {
   ctx.fillStyle = "#D9A441";
   ys.forEach((v, i) => { if (v == null) return; ctx.beginPath(); ctx.arc(a.sx(i), a.sy(v), 3, 0, Math.PI * 2); ctx.fill(); });
 
+  // Legend + target status.
   const legend = document.getElementById("weightLegend");
-  if (legend) legend.hidden = !showAvg;
+  if (legend) {
+    legend.hidden = !(showAvg || (wt && wt.active));
+    const avgItem = legend.querySelector(".lg-item-avg");
+    const tgtItem = legend.querySelector(".lg-item-target");
+    if (avgItem) avgItem.style.display = showAvg ? "" : "none";
+    if (tgtItem) tgtItem.style.display = (wt && wt.active) ? "" : "none";
+  }
+  const statusEl = document.getElementById("weightStatus");
+  if (statusEl) {
+    if (wt && wt.active) {
+      const latest = Number(weights[weights.length - 1].weightKg);
+      const ahead = wtarget.dir === "reduce" ? (wt.targetToday - latest) : (latest - wt.targetToday);
+      const word = ahead >= -0.05 ? "ahead of" : "behind";
+      statusEl.textContent = `Target: ${wtarget.dir} ${wtarget.rate} kg/wk · ${Math.abs(ahead).toFixed(1)} kg ${word} target`;
+      statusEl.style.color = ahead >= -0.05 ? "#6E9B72" : "var(--chili)";
+      statusEl.hidden = false;
+    } else {
+      statusEl.hidden = true;
+    }
+  }
+}
+
+// Compute the target weight for each bucket from the first weigh-in + rate.
+function weightTargetLine(buckets) {
+  if (wtarget.dir === "off" || weights.length === 0) return null;
+  const base = weights[0];                       // earliest weigh-in = baseline
+  const baseKg = Number(base.weightKg);
+  const baseMs = new Date(base.timestamp).getTime();
+  const sign = wtarget.dir === "reduce" ? -1 : 1;
+  const at = ms => baseKg + sign * wtarget.rate * ((ms - baseMs) / (7 * 86400000));   // baseKg ± rate·weeks
+  const repMs = b => b.day ? (b.day.getTime() + 43200000) : (b.start + b.end) / 2;
+  const targetYs = buckets.map(b => at(repMs(b)));
+  return { active: true, targetYs, baseKg, targetToday: at(Date.now()) };
 }
 
 function drawFastChart() {
@@ -1081,6 +1142,108 @@ function renderSchedule() {
   });
 }
 renderSchedule();
+
+/* ---------- Weight target (Targets tab) ---------- */
+function renderWeightTarget() {
+  const dir = document.getElementById("wtDir");
+  const rate = document.getElementById("wtRate");
+  const baseHint = document.getElementById("wtBase");
+  if (!dir || !rate) return;
+
+  // rate options 0.1 .. 2.0 kg/week in 0.1 (100 g) steps
+  if (!rate.options.length) {
+    let out = "";
+    for (let i = 1; i <= 20; i++) out += `<option value="${(i/10).toFixed(1)}">${(i/10).toFixed(1)}</option>`;
+    rate.innerHTML = out;
+  }
+  dir.value = wtarget.dir;
+  rate.value = wtarget.rate.toFixed(1);
+  rate.disabled = wtarget.dir === "off";
+
+  if (weights.length === 0) {
+    baseHint.textContent = "Add a weight entry to set your baseline.";
+  } else {
+    const b = weights[0];
+    baseHint.textContent = `Baseline: ${Number(b.weightKg).toFixed(1)} kg on ${fmtDate(new Date(b.timestamp))} (first weigh-in).`;
+  }
+}
+document.getElementById("wtDir").addEventListener("change", (e) => {
+  wtarget.dir = e.target.value;
+  save(STORE_KEYS.wtarget, wtarget);
+  renderWeightTarget();
+  drawWeightChart();
+});
+document.getElementById("wtRate").addEventListener("change", (e) => {
+  wtarget.rate = parseFloat(e.target.value);
+  save(STORE_KEYS.wtarget, wtarget);
+  drawWeightChart();
+});
+renderWeightTarget();
+
+/* ---------- Weekly insight card (Trends tab) ---------- */
+function renderInsight() {
+  const el = document.getElementById("insightCard");
+  if (!el) return;
+  const now = new Date();
+  const day = now.getDay();
+  const weekStart = new Date(now); weekStart.setDate(now.getDate() - day); weekStart.setHours(0, 0, 0, 0);
+  const eats = eatsAscending();
+  const nowMs = now.getTime();
+
+  // avg actual fast over this week's counted days + adherence
+  let sum = 0, n = 0, hit = 0, total = 0;
+  for (let d = new Date(weekStart); d <= now; d.setDate(d.getDate() + 1)) {
+    const r = dayActualFast(new Date(d), eats, nowMs);
+    if (r) { sum += r.hours; n++; }
+    const ev = dayFastEval(new Date(d), eats, nowMs);
+    if (ev.counted) { total++; if (ev.onTarget) hit++; }
+  }
+  if (n === 0 && weights.length === 0) { el.hidden = true; return; }
+  el.hidden = false;
+
+  // weight change this week (highest per day: last day with data vs first)
+  const wkW = weights.filter(w => new Date(w.timestamp).getTime() >= weekStart.getTime());
+  let wtxt = "";
+  if (wkW.length >= 2) {
+    const delta = Number(wkW[wkW.length - 1].weightKg) - Number(wkW[0].weightKg);
+    wtxt = ` · ${delta >= 0 ? "+" : "−"}${Math.abs(delta).toFixed(1)} kg`;
+  }
+  const avgTxt = n ? `avg fast ${(sum / n).toFixed(1)}h` : "no fasts yet";
+  const adhTxt = total ? ` · ${hit}/${total} on target` : "";
+  el.innerHTML = `<div class="insight-title">This week</div><div class="insight-body">${avgTxt}${adhTxt}${wtxt}</div>`;
+}
+
+/* ---------- Consistency heatmap (Trends tab) ---------- */
+function renderHeatmap() {
+  const host = document.getElementById("heatmap");
+  if (!host) return;
+  const WEEKS = 14;
+  const now = new Date();
+  const eats = eatsAscending();
+  const nowMs = now.getTime();
+
+  // start = Sunday of (WEEKS-1) weeks ago
+  const start = new Date(now); start.setHours(0, 0, 0, 0);
+  start.setDate(start.getDate() - now.getDay() - (WEEKS - 1) * 7);
+
+  let html = "";
+  for (let w = 0; w < WEEKS; w++) {
+    html += `<div class="heat-col">`;
+    for (let d = 0; d < 7; d++) {
+      const cell = new Date(start); cell.setDate(start.getDate() + w * 7 + d);
+      let cls = "heat-none";
+      if (cell <= now) {
+        const r = dayFastEval(cell, eats, nowMs);
+        cls = !r.counted ? "heat-none" : (r.onTarget ? "heat-green" : "heat-red");
+      } else {
+        cls = "heat-future";
+      }
+      html += `<span class="heat-cell ${cls}" title="${fmtDate(cell)}"></span>`;
+    }
+    html += `</div>`;
+  }
+  host.innerHTML = html;
+}
 
 /* ---------- Backup: export / import (Schedule tab) ---------- */
 function dateStamp() {
