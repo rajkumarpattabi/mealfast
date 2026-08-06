@@ -899,19 +899,33 @@ function gdBackup(interactive) {
 
 function gdRestore() {
   gdGetToken(true, (token) => {
-    const pull = (id) => fetch(`https://www.googleapis.com/drive/v3/files/${id}?alt=media`, {
-      headers: { Authorization: "Bearer " + token }
-    }).then(r => r.json()).then(data => {
+    const apply = (data) => {
       if (!confirm("Replace all current data with the backup from Google Drive?")) return;
       if (applyImportedData(data)) { renderBackupStatus(); showToast("Restored from Drive"); }
-    }).catch(() => showToast("Restore failed"));
+    };
+    const pull = (id) => fetch(`https://www.googleapis.com/drive/v3/files/${id}?alt=media`, {
+      headers: { Authorization: "Bearer " + token }
+    }).then(r => {
+      if (r.status === 404) throw "stale";   // cached id points to a deleted file
+      return r.json();
+    }).then(apply);
+
+    // Re-find the file by name (used first-time, or as fallback if the id is stale).
+    const findAndPull = () => gdFindFile(token).then(fid => {
+      if (!fid) { showToast("No Drive backup found"); return; }
+      localStorage.setItem(GD.fileId, fid);
+      return pull(fid);
+    });
 
     const id = localStorage.getItem(GD.fileId);
-    if (id) pull(id);
-    else gdFindFile(token).then(fid => {
-      if (fid) { localStorage.setItem(GD.fileId, fid); pull(fid); }
-      else showToast("No Drive backup found");
-    }).catch(() => showToast("Restore failed"));
+    if (id) {
+      pull(id).catch(err => {
+        if (err === "stale") { localStorage.removeItem(GD.fileId); return findAndPull(); }
+        showToast("Restore failed");
+      });
+    } else {
+      findAndPull().catch(() => showToast("Restore failed"));
+    }
   }, (msg) => showToast("Drive: " + msg));
 }
 
