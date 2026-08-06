@@ -74,7 +74,72 @@ main {
   flex-direction: column;
   min-height: 100%;
 }
-.timer-center { margin: auto 0; }   /* centers the ring in the free space */
+.timer-center { margin-top: auto; }   /* free space above lowers the ring toward centre */
+
+/* Circle percentage line (replaces the old secondary text inside the ring) */
+.timer-pct {
+  font-size: 13px;
+  color: var(--muted);
+  font-weight: 600;
+  margin-top: 6px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- Timer stat boxes (state · timer · streak) ---- */
+.stat-row {
+  display: flex;
+  gap: 10px;
+  max-width: 340px;
+  width: 100%;
+  margin: 22px auto 0 auto;
+  padding: 0 4px;
+  align-items: stretch;
+}
+.stat-box {
+  flex: 1 1 0;
+  aspect-ratio: 1 / 1;
+  background: var(--ink-2);
+  border-radius: var(--radius);
+  padding: 11px 8px;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  gap: 2px;
+  text-align: center;
+}
+.stat-box.tappable { cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.box-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--turmeric);
+  line-height: 1.12;
+  min-height: 25px;              /* two-line band so long stage names align with short labels */
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  text-align: center;
+}
+.box-mid { display: flex; align-items: center; justify-content: center; min-height: 0; overflow: hidden; }
+.box-val {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--cream);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
+}
+.box-sub { font-size: 10px; color: var(--muted); font-weight: 600; min-height: 12px; }
+.state-icon { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; }
+.state-icon svg {
+  width: 100%; height: 100%;
+  fill: none;
+  stroke: var(--cream);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0.26;
+  transform: scale(1.8);
+  transform-origin: 50% 66%;   /* zoom into where the stage art sits so it fills the box */
+}
 
 .welcome {
   text-align: center;
@@ -235,7 +300,7 @@ main {
   display: flex;
   gap: 10px;
   max-width: 340px;
-  margin: 4px auto 8px auto;
+  margin: auto auto 8px auto;   /* margin-top:auto pins the buttons toward the bottom */
   padding: 0 4px;
   width: 100%;
 }

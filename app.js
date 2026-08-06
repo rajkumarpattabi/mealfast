@@ -246,17 +246,6 @@ function fastMilestone(h) {
 function updateGreeting(now) {
   document.getElementById("greetingLine").innerHTML =
     `${greetingWord(now.getHours())}, <span class="name">${USER_NAME}</span>`;
-
-  const st = streakStats(now);
-  const streakEl = document.getElementById("greetingStreak");
-  const dayWord = n => n === 1 ? "day" : "days";
-  if (st.current > 0) {
-    streakEl.textContent = `Current streak: ${st.current} ${dayWord(st.current)} · Best: ${st.best} ${dayWord(st.best)}`;
-  } else if (st.best > 0) {
-    streakEl.textContent = `Best streak: ${st.best} ${dayWord(st.best)} — start a new one today`;
-  } else {
-    streakEl.textContent = "Hit your target to start a streak";
-  }
 }
 
 /* ---- Fasting-stage background art (driven by ELAPSED hours, not goal %) ---- */
@@ -324,8 +313,68 @@ function fastColor(elapsedFrac) {
 }
 
 function updateStreakBadge(now) {
+  const el = document.getElementById("streakBadge");
+  if (!el) return;                       // badge removed from the header
   const streak = weeklyStreak(now);
-  document.getElementById("streakBadge").textContent = `${streak.hit}/${streak.total} this week`;
+  el.textContent = `${streak.hit}/${streak.total} this week`;
+}
+
+// On-target days this calendar month (same rule as weeklyStreak).
+function monthlyStreak(now) {
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const eats = eatsAscending();
+  const nowMs = now.getTime();
+  let hit = 0, total = 0;
+  for (let d = new Date(monthStart); d <= now; d.setDate(d.getDate() + 1)) {
+    const r = dayFastEval(new Date(d), eats, nowMs);
+    if (!r.counted) continue;
+    total++;
+    if (r.onTarget) hit++;
+  }
+  return { hit, total };
+}
+
+const MON = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+// "3–9 Aug" (or "31 Jul – 6 Aug" when the week spans two months)
+function weekRangeLabel(now) {
+  const start = new Date(now); start.setDate(now.getDate() - now.getDay()); start.setHours(0,0,0,0);
+  const end = new Date(start); end.setDate(start.getDate() + 6);
+  if (start.getMonth() === end.getMonth()) {
+    return `${start.getDate()}–${end.getDate()} ${MON[end.getMonth()]}`;
+  }
+  return `${start.getDate()} ${MON[start.getMonth()]} – ${end.getDate()} ${MON[end.getMonth()]}`;
+}
+
+// Box (c) shows weekly or monthly consistency; tapping it flips the period.
+let periodMode = localStorage.getItem("mf_period_mode") === "month" ? "month" : "week";
+function renderPeriodBox(now) {
+  const lbl = document.getElementById("perLabel");
+  const val = document.getElementById("perVal");
+  const sub = document.getElementById("perDate");
+  if (!lbl) return;
+  if (periodMode === "month") {
+    const m = monthlyStreak(now);
+    lbl.textContent = "This Month";
+    val.textContent = `${m.hit}/${m.total}`;
+    sub.textContent = `${MON[now.getMonth()]} ${now.getFullYear()}`;
+  } else {
+    const w = weeklyStreak(now);
+    lbl.textContent = "This Week";
+    val.textContent = `${w.hit}/${w.total}`;
+    sub.textContent = weekRangeLabel(now);
+  }
+}
+
+// Render the fasting-stage name + subtle icon into box (a).
+let currentBoxArt = "__init";
+function setStageBox(name, key) {
+  const nameEl = document.getElementById("stageName");
+  const iconEl = document.getElementById("stageIcon");
+  if (nameEl) nameEl.textContent = name;
+  if (iconEl && key !== currentBoxArt) {
+    currentBoxArt = key;
+    iconEl.innerHTML = key ? (STAGE_ART[key] || "") : "";
+  }
 }
 
 function renderTimer() {
@@ -337,24 +386,27 @@ function renderTimer() {
   updateGreeting(now);
 
   const ring = document.getElementById("ringProgress");
-  const heading = document.getElementById("stageHeading");
-  const goalLine = document.getElementById("goalLine");
   const countdown = document.getElementById("countdownText");
-  const secondary = document.getElementById("phaseSecondary");
+  const pctEl = document.getElementById("timerPct");
+  const tglLabel = document.getElementById("tglLabel");
+  const tglVal = document.getElementById("tglVal");
   const noSchedule = document.getElementById("noScheduleNote");
+
+  // Box (c) — weekly/monthly consistency — updates in every phase.
+  renderPeriodBox(now);
 
   if (state.phase === "none") {
     noSchedule.hidden = false;
     noSchedule.innerHTML = "No meals logged yet. Tap <strong>Ended eating</strong> below when you finish your last meal to start your fast.";
-    heading.textContent = "Ready";
-    heading.style.color = "var(--turmeric)";
-    goalLine.textContent = "Log your last meal to begin";
     countdown.textContent = "--:--:--";
-    secondary.textContent = "";
+    pctEl.textContent = "Log your last meal to begin";
+    // Ring visuals unchanged from the original.
     ring.style.stroke = "var(--turmeric)";
     ring.style.strokeDashoffset = RING_CIRC;
     setRingDot(0, "", false);
-    setStageArt(null);
+    setStageBox("Ready", null);
+    tglLabel.textContent = timerMode === "elapsed" ? "Fasting" : "Remaining";
+    tglVal.textContent = "--:--:--";
     lastPhase = null;
     updateStreakBadge(now);
     return;
@@ -369,42 +421,44 @@ function renderTimer() {
     const col = fastColor(frac);
     const stage = stageForHours(elapsed / 3600000);
 
-    heading.textContent = stage.name;          // stage name is the heading
-    heading.style.color = col;
+    // --- Ring progress & colour: unchanged from the original design ---
     ring.style.stroke = col;
     ring.style.strokeDashoffset = RING_CIRC * (1 - frac);
-    setStageArt(stage.key);
+
+    setStageBox(stage.name, stage.key);
 
     if (state.phase === "fasting") {
-      const pctDone = Math.min(100, Math.round((elapsed / total) * 100));
-      const by = state.goalAt.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
-      goalLine.textContent = `${pctDone}% of ${state.target}h goal · by ${by}`;
       setRingDot(frac, col, true);
+      const pctDone = Math.min(100, Math.round(frac * 100));
       if (timerMode === "elapsed") {
         countdown.textContent = formatHMS(elapsed);
-        secondary.textContent = `${formatHMS(remaining)} to goal`;
+        pctEl.textContent = `${pctDone}% of goal`;
+        tglLabel.textContent = "Fasting";
+        tglVal.textContent = formatHMS(elapsed);
       } else {
         countdown.textContent = formatHMS(remaining);
-        secondary.textContent = `${formatHMS(elapsed)} elapsed`;
+        pctEl.textContent = `${Math.max(0, 100 - pctDone)}% to go`;
+        tglLabel.textContent = "Remaining";
+        tglVal.textContent = formatHMS(remaining);
       }
     } else {   // goal reached — extended fast
-      const over = elapsed - total;
-      goalLine.textContent = over > 60000 ? `Goal reached · ${relFast(over)} into extended fast` : "Goal reached";
-      countdown.textContent = formatHMS(elapsed);
-      secondary.textContent = "tap Started eating when you eat";
       setRingDot(0, "", false);   // ring is full; no leading dot
+      const over = elapsed - total;
+      countdown.textContent = formatHMS(elapsed);
+      pctEl.textContent = over > 60000 ? `Goal +${relFast(over)}` : "Goal reached";
+      tglLabel.textContent = timerMode === "elapsed" ? "Fasting" : "Remaining";
+      tglVal.textContent = timerMode === "elapsed" ? formatHMS(elapsed) : "00:00:00";
     }
   } else {
-    // Actively eating.
-    heading.textContent = "Eating";
-    heading.style.color = "var(--leaf)";
-    goalLine.textContent = "Eating window";
+    // Actively eating — ring visuals unchanged from the original.
     ring.style.stroke = "var(--leaf)";
     ring.style.strokeDashoffset = 0;
-    countdown.textContent = formatHMS(now - state.eatingSince);
-    secondary.textContent = "tap Ended eating to begin your fast";
     setRingDot(0, "", false);
-    setStageArt(null);
+    countdown.textContent = formatHMS(now - state.eatingSince);
+    pctEl.textContent = "Eating window";
+    setStageBox("Eating", null);
+    tglLabel.textContent = "Eating";
+    tglVal.textContent = formatHMS(now - state.eatingSince);
   }
 
   if (lastPhase === "fasting" && state.phase === "goal") notifyGoalReached();
@@ -442,11 +496,20 @@ function showToast(msg) {
 document.getElementById("startEatingBtn").addEventListener("click", () => logEatMarker("start"));
 document.getElementById("endEatingBtn").addEventListener("click", () => logEatMarker("end"));
 
-// Tap the ring to flip between Remaining and Fasting (elapsed) emphasis.
-document.getElementById("ringWrap").addEventListener("click", () => {
+// Tap the ring (or the middle box) to flip between Remaining and Fasting emphasis.
+function flipTimerMode() {
   timerMode = timerMode === "elapsed" ? "remaining" : "elapsed";
   localStorage.setItem("mf_timer_mode", timerMode);
   renderTimer();
+}
+document.getElementById("ringWrap").addEventListener("click", flipTimerMode);
+document.getElementById("toggleBox").addEventListener("click", flipTimerMode);
+
+// Tap the third box to switch between weekly and monthly consistency.
+document.getElementById("periodBox").addEventListener("click", () => {
+  periodMode = periodMode === "month" ? "week" : "month";
+  localStorage.setItem("mf_period_mode", periodMode);
+  renderPeriodBox(new Date());
 });
 
 setInterval(renderTimer, 1000);

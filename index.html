@@ -18,7 +18,6 @@
 
 <header class="topbar">
   <span class="topbar-mark">MealFast</span>
-  <span id="streakBadge" class="streak-badge">0/0 this week</span>
 </header>
 
 <main>
@@ -27,14 +26,10 @@
   <section id="tab-timer" class="tab active">
     <div class="welcome">
       <div id="greetingLine" class="greeting"></div>
-      <div id="greetingStreak" class="greeting-streak"></div>
     </div>
 
     <div class="timer-center">
-      <div id="stageHeading" class="stage-heading">Fasting</div>
-      <div id="goalLine" class="goal-line"></div>
       <div class="ring-wrap" id="ringWrap">
-        <div id="stageArt" class="stage-art"></div>
         <svg class="ring" viewBox="0 0 200 200">
           <circle class="ring-track" cx="100" cy="100" r="88"></circle>
           <circle id="ringProgress" class="ring-progress" cx="100" cy="100" r="88"></circle>
@@ -42,8 +37,26 @@
         </svg>
         <div class="ring-center">
           <span id="countdownText" class="countdown-text">--:--:--</span>
-          <span id="phaseSecondary" class="phase-secondary"></span>
+          <span id="timerPct" class="timer-pct"></span>
         </div>
+      </div>
+    </div>
+
+    <div class="stat-row">
+      <div class="stat-box state-box">
+        <div class="box-label" id="stageName">Ready</div>
+        <div class="box-mid"><div class="state-icon" id="stageIcon"></div></div>
+        <div class="box-sub"></div>
+      </div>
+      <div class="stat-box tappable" id="toggleBox">
+        <div class="box-label" id="tglLabel">Remaining</div>
+        <div class="box-mid"><span class="box-val" id="tglVal">--:--:--</span></div>
+        <div class="box-sub"></div>
+      </div>
+      <div class="stat-box tappable" id="periodBox">
+        <div class="box-label" id="perLabel">This Week</div>
+        <div class="box-mid"><span class="box-val" id="perVal">0/0</span></div>
+        <div class="box-sub" id="perDate"></div>
       </div>
     </div>
 
