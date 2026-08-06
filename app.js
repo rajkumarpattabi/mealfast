@@ -138,42 +138,79 @@ function rollingFastState(now) {
   };
 }
 
-/* ---------- Streak ----------
+/* ---------- Streak / per-day fasting (shared) ----------
    A day is "on target" if the fast that STARTED that day — measured from your
    last meal of the day to the next time you ate — was at least that day's goal.
    Measuring the real gap between eating events (not a single calendar day) lets
    fasts run past midnight, so 24h+ targets are credited correctly. The day a
    long fast spends entirely fasting has no eating logs and simply isn't counted. */
+
+// All fast-breaking (Meal/Drink) timestamps, ascending. Shared by streak + trends.
+function eatsAscending() {
+  return logs
+    .filter(l => l.type === "Meal" || l.type === "Drink")
+    .map(l => new Date(l.timestamp).getTime())
+    .sort((a, b) => a - b);
+}
+
+// Evaluate the fast that started on calendar day `d`: { counted, onTarget }.
+function dayFastEval(d, eats, nowMs) {
+  const dayStr = d.toDateString();
+  const dayEats = eats.filter(t => new Date(t).toDateString() === dayStr);
+  if (dayEats.length === 0) return { counted: false, onTarget: false };  // no fast started
+  const lastMeal = Math.max(...dayEats);
+  const targetMs = targetHoursFor(d) * 3600000;
+  const nextMeal = eats.find(t => t > lastMeal);
+  if (nextMeal != null) return { counted: true, onTarget: (nextMeal - lastMeal) >= targetMs };
+  if (nowMs - lastMeal >= targetMs) return { counted: true, onTarget: true };  // ongoing, already past goal
+  return { counted: false, onTarget: false };  // ongoing, undetermined
+}
+
 function weeklyStreak(now) {
   const day = now.getDay();
   const weekStart = new Date(now); weekStart.setDate(now.getDate() - day); weekStart.setHours(0,0,0,0);
-
-  const eats = logs
-    .filter(l => l.type === "Meal" || l.type === "Drink")
-    .map(l => new Date(l.timestamp).getTime())
-    .sort((a,b) => a - b);
-  if (eats.length === 0) return { hit: 0, total: 0 };
-
+  const eats = eatsAscending();
   const nowMs = now.getTime();
   let hit = 0, total = 0;
   for (let d = new Date(weekStart); d <= now; d.setDate(d.getDate() + 1)) {
-    const dayStr = d.toDateString();
-    const dayEats = eats.filter(t => new Date(t).toDateString() === dayStr);
-    if (dayEats.length === 0) continue;              // no fast started this day
-
-    const lastMeal = Math.max(...dayEats);            // the fast begins after the day's last meal
-    const targetMs = targetHoursFor(d) * 3600000;
-    const nextMeal = eats.find(t => t > lastMeal);    // when that fast was broken
-
-    if (nextMeal != null) {
-      total++;
-      if (nextMeal - lastMeal >= targetMs) hit++;     // completed fast met the goal
-    } else if (nowMs - lastMeal >= targetMs) {
-      total++; hit++;                                 // still fasting, but already past the goal
-    }
-    // else: current fast still under target — undetermined, don't count it yet
+    const r = dayFastEval(d, eats, nowMs);
+    if (!r.counted) continue;
+    total++;
+    if (r.onTarget) hit++;
   }
   return { hit, total };
+}
+
+// Current + longest on-target streaks across the whole history.
+// On-target days extend a run; a real miss (counted but not on target) breaks it;
+// days with no fast started / undetermined are transparent (neither break nor extend).
+function streakStats(now) {
+  const eats = eatsAscending();
+  if (eats.length === 0) return { current: 0, best: 0 };
+  const nowMs = now.getTime();
+  const day = new Date(eats[0]); day.setHours(0, 0, 0, 0);
+  const today = new Date(now); today.setHours(0, 0, 0, 0);
+
+  const results = [];
+  for (let d = new Date(day); d <= today; d.setDate(d.getDate() + 1)) {
+    results.push(dayFastEval(new Date(d), eats, nowMs));
+  }
+
+  let best = 0, run = 0;
+  for (const r of results) {
+    if (!r.counted) continue;
+    if (r.onTarget) { run++; if (run > best) best = run; }
+    else run = 0;
+  }
+
+  let current = 0;
+  for (let i = results.length - 1; i >= 0; i--) {
+    const r = results[i];
+    if (!r.counted) continue;      // skip today-undetermined / no-data days
+    if (r.onTarget) current++;
+    else break;                    // a miss ends the current streak
+  }
+  return { current, best };
 }
 
 /* ---------- Timer tab rendering ---------- */
@@ -204,40 +241,72 @@ function fastMilestone(h) {
   return "deep fast — autophagy peak";
 }
 
-function updateGreeting(now, state) {
+function updateGreeting(now) {
   document.getElementById("greetingLine").innerHTML =
     `${greetingWord(now.getHours())}, <span class="name">${USER_NAME}</span>`;
 
-  let sub;
-  if (!state || state.phase === "none") {
-    sub = "Ready when you are — log your last meal to begin.";
-  } else if (state.phase === "fasting") {
-    const el = now - state.fastStart;
-    sub = `Fasting ${relFast(el)} · ${fastMilestone(el / 3600000)}`;
-  } else if (state.phase === "goal") {
-    const el = now - state.fastStart;
-    sub = `Fasting ${relFast(el)} · goal reached`;
-  } else {
-    sub = "Enjoy your eating window.";
-  }
-  document.getElementById("greetingSub").textContent = sub;
-
-  const s = weeklyStreak(now);
+  const st = streakStats(now);
   const streakEl = document.getElementById("greetingStreak");
-  if (s.total > 0) {
-    const tail = s.hit === s.total ? "perfect run — keep it up!" : "keep it going.";
-    streakEl.textContent = `${s.hit}/${s.total} on target this week — ${tail}`;
+  const dayWord = n => n === 1 ? "day" : "days";
+  if (st.current > 0) {
+    streakEl.textContent = `Current streak: ${st.current} ${dayWord(st.current)} · Best: ${st.best} ${dayWord(st.best)}`;
+  } else if (st.best > 0) {
+    streakEl.textContent = `Best streak: ${st.best} ${dayWord(st.best)} — start a new one today`;
   } else {
-    streakEl.textContent = "This week's streak starts with your next fast.";
+    streakEl.textContent = "Hit your target to start a streak";
   }
+}
+
+/* ---- Fasting-stage background art (driven by ELAPSED hours, not goal %) ---- */
+const ART_OPACITY = 0.16;
+const STAGE_ART = {
+  digesting: `<svg viewBox="0 0 100 100" class="art-svg"><circle cx="50" cy="70" r="22"/><circle cx="50" cy="70" r="13"/></svg>`,
+  glycogen:  `<svg viewBox="0 0 100 100" class="art-svg"><polygon points="50,70 44,80.4 32,80.4 26,70 32,59.6 44,59.6"/><polygon points="74,70 68,80.4 56,80.4 50,70 56,59.6 68,59.6"/></svg>`,
+  fat:       `<svg viewBox="0 0 100 100" class="art-svg"><path d="M50,50 C62,68 62,82 50,88 C38,82 38,68 50,50 Z"/></svg>`,
+  ketosis:   `<svg viewBox="0 0 100 100" class="art-svg"><line x1="50" y1="58" x2="38" y2="78"/><line x1="50" y1="58" x2="62" y2="78"/><line x1="38" y1="78" x2="62" y2="78"/><circle cx="50" cy="58" r="6"/><circle cx="38" cy="78" r="6"/><circle cx="62" cy="78" r="6"/></svg>`,
+  autophagy: `<svg viewBox="0 0 100 100" class="art-svg"><circle cx="50" cy="70" r="22"/><path d="M40,62 A12,12 0 1 0 44,58"/><circle cx="50" cy="70" r="5"/></svg>`,
+  deep:      `<svg viewBox="0 0 100 100" class="art-svg"><line x1="50" y1="92" x2="50" y2="64"/><path d="M50,74 C40,74 33,66 35,58 C45,58 50,66 50,74 Z"/><path d="M50,70 C60,70 67,62 65,54 C55,54 50,62 50,70 Z"/></svg>`
+};
+function stageForHours(h) {
+  if (h < 4)  return { key: "digesting", name: "Digesting" };
+  if (h < 12) return { key: "glycogen",  name: "Glycogen Burning" };
+  if (h < 18) return { key: "fat",       name: "Fat-Adaptation" };
+  if (h < 24) return { key: "ketosis",   name: "Ketosis" };
+  if (h < 48) return { key: "autophagy", name: "Autophagy Rising" };
+  return { key: "deep", name: "Deep Autophagy" };
+}
+let currentArtKey = "__init", artFadeTimer = null;
+function setStageArt(key) {
+  const el = document.getElementById("stageArt");
+  if (!el || key === currentArtKey) return;
+  currentArtKey = key;
+  clearTimeout(artFadeTimer);
+  el.style.opacity = "0";                        // fade out, swap, fade in (crossfade-through)
+  artFadeTimer = setTimeout(() => {
+    el.innerHTML = key ? (STAGE_ART[key] || "") : "";
+    el.style.opacity = key ? String(ART_OPACITY) : "0";
+  }, 260);
+}
+
+// Glowing dot at the arc's leading edge (only while fasting toward the goal).
+function setRingDot(frac, col, show) {
+  const dot = document.getElementById("ringDot");
+  if (!dot) return;
+  if (!show) { dot.style.display = "none"; return; }
+  const theta = 2 * Math.PI * frac;
+  dot.setAttribute("cx", (100 + 88 * Math.cos(theta)).toFixed(2));
+  dot.setAttribute("cy", (100 + 88 * Math.sin(theta)).toFixed(2));
+  dot.setAttribute("fill", col);
+  dot.style.filter = `drop-shadow(0 0 4px ${col})`;
+  dot.style.display = "";
 }
 
 const RING_CIRC = 2 * Math.PI * 88;
 document.getElementById("ringProgress").style.strokeDasharray = RING_CIRC;
 
 let lastPhase = null;
-// While fasting, the ring can emphasise time REMAINING (default) or time
-// ELAPSED ("Fasting"). Tapping the ring toggles it; the choice is remembered.
+// While fasting, the ring can emphasise time REMAINING (default) or time ELAPSED.
+// Tapping the ring toggles it; the choice is remembered.
 let timerMode = localStorage.getItem("mf_timer_mode") === "elapsed" ? "elapsed" : "remaining";
 
 function formatHMS(ms) {
@@ -247,11 +316,9 @@ function formatHMS(ms) {
   return `${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}`;
 }
 
-// Fast progress → ring colour. elapsedFrac 0 (just ate, 100% left) = red,
-// through orange/amber, to 1 (goal reached, 0% left and beyond) = green.
 function fastColor(elapsedFrac) {
   const f = Math.min(1, Math.max(0, elapsedFrac));
-  return `hsl(${Math.round(f * 120)}, 68%, 47%)`;
+  return `hsl(${Math.round(f * 120)}, 68%, 47%)`;   // red (0) → green (1)
 }
 
 function updateStreakBadge(now) {
@@ -265,84 +332,81 @@ function renderTimer() {
   if (logsChanged) renderLogs();
   const now = new Date();
   const state = rollingFastState(now);
-  updateGreeting(now, state);
+  updateGreeting(now);
+
   const ring = document.getElementById("ringProgress");
-  const label = document.getElementById("phaseLabel");
+  const heading = document.getElementById("stageHeading");
+  const goalLine = document.getElementById("goalLine");
   const countdown = document.getElementById("countdownText");
-  const sub = document.getElementById("phaseSub");
   const secondary = document.getElementById("phaseSecondary");
-  const nextMealRow = document.getElementById("nextMealRow");
   const noSchedule = document.getElementById("noScheduleNote");
 
-  // No meals logged yet — nothing to count from.
   if (state.phase === "none") {
     noSchedule.hidden = false;
     noSchedule.innerHTML = "No meals logged yet. Tap <strong>Ended eating</strong> below when you finish your last meal to start your fast.";
-    label.textContent = "Ready";
-    label.style.color = "var(--turmeric)";
+    heading.textContent = "Ready";
+    heading.style.color = "var(--turmeric)";
+    goalLine.textContent = "Log your last meal to begin";
     countdown.textContent = "--:--:--";
-    sub.textContent = "";
     secondary.textContent = "";
-    nextMealRow.textContent = "";
     ring.style.stroke = "var(--turmeric)";
     ring.style.strokeDashoffset = RING_CIRC;
+    setRingDot(0, "", false);
+    setStageArt(null);
     lastPhase = null;
     updateStreakBadge(now);
     return;
   }
   noSchedule.hidden = true;
 
-  if (state.phase === "fasting") {
+  if (state.phase === "fasting" || state.phase === "goal") {
     const total = state.target * 3600000;
-    const remaining = Math.max(0, state.goalAt - now);
     const elapsed = Math.max(0, now - state.fastStart);
-    const pctLeft = Math.round((remaining / total) * 100);
+    const remaining = Math.max(0, state.goalAt - now);
     const frac = Math.min(1, Math.max(0, elapsed / total));
-    const col = fastColor(frac);   // red at 100% left → green as it nears the goal
-    label.style.color = col;
+    const col = fastColor(frac);
+    const stage = stageForHours(elapsed / 3600000);
+
+    heading.textContent = stage.name;          // stage name is the heading
+    heading.style.color = col;
     ring.style.stroke = col;
     ring.style.strokeDashoffset = RING_CIRC * (1 - frac);
-    sub.textContent = `${pctLeft}% left · goal ${state.target}h`;
-    if (timerMode === "elapsed") {
-      label.textContent = "Fasting";
+    setStageArt(stage.key);
+
+    if (state.phase === "fasting") {
+      const pctDone = Math.min(100, Math.round((elapsed / total) * 100));
+      const by = state.goalAt.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+      goalLine.textContent = `${pctDone}% of ${state.target}h goal · by ${by}`;
+      setRingDot(frac, col, true);
+      if (timerMode === "elapsed") {
+        countdown.textContent = formatHMS(elapsed);
+        secondary.textContent = `${formatHMS(remaining)} to goal`;
+      } else {
+        countdown.textContent = formatHMS(remaining);
+        secondary.textContent = `${formatHMS(elapsed)} elapsed`;
+      }
+    } else {   // goal reached — extended fast
+      const over = elapsed - total;
+      goalLine.textContent = over > 60000 ? `Goal reached · ${relFast(over)} into extended fast` : "Goal reached";
       countdown.textContent = formatHMS(elapsed);
-      secondary.textContent = `${formatHMS(remaining)} remaining`;
-    } else {
-      label.textContent = "Remaining";
-      countdown.textContent = formatHMS(remaining);
-      secondary.textContent = `Fasted ${formatHMS(elapsed)}`;
+      secondary.textContent = "tap Started eating when you eat";
+      setRingDot(0, "", false);   // ring is full; no leading dot
     }
-    nextMealRow.textContent = `Goal at ${state.goalAt.toLocaleTimeString([], {hour:"numeric", minute:"2-digit"})}`;
-  } else if (state.phase === "goal") {
-    // Goal reached — count up total time fasted until you start eating again.
-    const green = fastColor(1);   // full green at 0% and beyond
-    label.textContent = "Eating Window";
-    label.style.color = green;
-    ring.style.stroke = green;
-    countdown.textContent = formatHMS(now - state.fastStart);
-    sub.textContent = `${state.target}h goal reached — tap Started eating when you eat`;
-    secondary.textContent = "";
-    ring.style.strokeDashoffset = 0;   // full ring
-    nextMealRow.textContent = "";
   } else {
-    // Actively eating — count up the eating window until you tap Ended eating.
-    label.textContent = "Eating";
-    label.style.color = "var(--leaf)";
+    // Actively eating.
+    heading.textContent = "Eating";
+    heading.style.color = "var(--leaf)";
+    goalLine.textContent = "Eating window";
     ring.style.stroke = "var(--leaf)";
+    ring.style.strokeDashoffset = 0;
     countdown.textContent = formatHMS(now - state.eatingSince);
-    sub.textContent = "eating — tap Ended eating to begin your fast";
-    secondary.textContent = "";
-    ring.style.strokeDashoffset = 0;   // full ring
-    nextMealRow.textContent = `Started ${state.eatingSince.toLocaleTimeString([], {hour:"numeric", minute:"2-digit"})}`;
+    secondary.textContent = "tap Ended eating to begin your fast";
+    setRingDot(0, "", false);
+    setStageArt(null);
   }
 
-  // Only notify on the passive fasting → goal-reached transition (the one you
-  // aren't watching for). Manual button taps don't self-notify.
-  if (lastPhase === "fasting" && state.phase === "goal") {
-    notifyGoalReached();
-  }
+  if (lastPhase === "fasting" && state.phase === "goal") notifyGoalReached();
   lastPhase = state.phase;
-
   updateStreakBadge(now);
 }
 
@@ -401,7 +465,7 @@ document.querySelectorAll(".tab-btn").forEach(btn => {
     btn.classList.add("active");
     document.getElementById("tab-" + btn.dataset.tab).classList.add("active");
     if (btn.dataset.tab === "trends") { drawWeightChart(); drawFastChart(); }
-    if (btn.dataset.tab === "schedule") { renderSchedule(); }
+    if (btn.dataset.tab === "schedule") { renderSchedule(); renderBackupStatus(); }
     if (btn.dataset.tab === "logs") { renderLogs(); }
     if (btn.dataset.tab === "entries") { populateWeightSelect(); }
   });
@@ -737,109 +801,168 @@ function prepCanvas(canvas, cssH) {
   return { ctx, W: cssW, H: cssH };
 }
 
-// Draw Y grid + value labels and 45°-rotated X date labels. Returns scale fns.
+// Draw Y grid + value labels and 45°-rotated X labels. Returns scale fns.
 // mode "line": points sit at the plot edges; "bar": points sit at slot centers.
-function drawAxes(ctx, W, H, scale, xs, yUnit, mode) {
+function drawAxes(ctx, W, H, scale, labels, yUnit, mode) {
   const padL = 40, padR = 12, padT = 12, padB = 42;
   const plotW = W - padL - padR, plotH = H - padT - padB;
-  const n = xs.length;
+  const n = labels.length;
   const sx = mode === "bar"
     ? i => padL + (plotW / n) * (i + 0.5)
     : i => padL + (n <= 1 ? plotW / 2 : (i / (n - 1)) * plotW);
   const sy = v => padT + plotH - ((v - scale.min) / (scale.max - scale.min || 1)) * plotH;
 
-  // Y gridlines + labels
   ctx.textAlign = "right"; ctx.textBaseline = "middle";
   for (let v = scale.min; v <= scale.max + 1e-9; v += scale.step) {
     const y = sy(v);
     ctx.strokeStyle = GRID; ctx.lineWidth = 1;
     ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(W - padR, y); ctx.stroke();
     ctx.fillStyle = TICK;
-    const label = Number.isInteger(v) ? String(v) : v.toFixed(1);
-    ctx.fillText(label, padL - 6, y);
+    ctx.fillText(Number.isInteger(v) ? String(v) : v.toFixed(1), padL - 6, y);
   }
-  // axis lines
   ctx.strokeStyle = AXIS; ctx.lineWidth = 1;
   ctx.beginPath(); ctx.moveTo(padL, padT); ctx.lineTo(padL, padT + plotH);
   ctx.lineTo(W - padR, padT + plotH); ctx.stroke();
 
-  // Y unit
   ctx.fillStyle = TICK; ctx.textAlign = "left"; ctx.textBaseline = "top";
   ctx.fillText(yUnit, 4, 2);
 
-  // X date labels, rotated 45°, thinned so at most ~7 show
-  const stepEvery = Math.max(1, Math.ceil(xs.length / 7));
+  const stepEvery = Math.max(1, Math.ceil(n / 7));
   ctx.fillStyle = TICK; ctx.textAlign = "right"; ctx.textBaseline = "middle";
-  xs.forEach((d, i) => {
-    if (i % stepEvery !== 0 && i !== xs.length - 1) return;
+  labels.forEach((lab, i) => {
+    if (i % stepEvery !== 0 && i !== n - 1) return;
     ctx.save();
     ctx.translate(sx(i), padT + plotH + 8);
     ctx.rotate(-Math.PI / 4);
-    ctx.fillText(fmtDate(d), 0, 0);
+    ctx.fillText(lab, 0, 0);
     ctx.restore();
   });
 
   return { sx, sy, padL, padR, padT, padB, plotW, plotH };
 }
 
+/* ---- Trends range + bucketing (Week / Month / Year) ---- */
+let trendRange = localStorage.getItem("mf_trend_range") || "week";
+
+// Ordered oldest→newest buckets for the selected range.
+function trendBuckets(range, now) {
+  const buckets = [];
+  if (range === "week") {
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(now); d.setDate(now.getDate() - i); d.setHours(0, 0, 0, 0);
+      buckets.push({ label: fmtDate(d), day: new Date(d), start: d.getTime(), end: d.getTime() + 86400000 - 1 });
+    }
+  } else if (range === "month") {
+    for (let b = 4; b >= 0; b--) {                       // 5 rolling 7-day buckets back from today
+      const end = new Date(now); end.setDate(now.getDate() - 7 * b); end.setHours(23, 59, 59, 999);
+      const start = new Date(end); start.setDate(end.getDate() - 6); start.setHours(0, 0, 0, 0);
+      buckets.push({ label: fmtDate(start), start: start.getTime(), end: end.getTime() });
+    }
+  } else {                                               // year: 12 calendar months
+    for (let b = 11; b >= 0; b--) {
+      const first = new Date(now.getFullYear(), now.getMonth() - b, 1, 0, 0, 0, 0);
+      const last = new Date(now.getFullYear(), now.getMonth() - b + 1, 0, 23, 59, 59, 999);
+      buckets.push({ label: MONTHS[first.getMonth()], start: first.getTime(), end: last.getTime() });
+    }
+  }
+  return buckets;
+}
+
+// Average of weigh-ins inside a bucket, or null if none.
+function weightAvgInRange(startMs, endMs) {
+  const vals = weights
+    .filter(w => { const t = new Date(w.timestamp).getTime(); return t >= startMs && t <= endMs; })
+    .map(w => Number(w.weightKg));
+  return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
+}
+
+// Raw fasted hours for a single calendar day (24 − eating span), or null.
+function dayFastedHours(d) {
+  const dayStr = d.toDateString();
+  const times = logs
+    .filter(l => (l.type === "Meal" || l.type === "Drink") && new Date(l.timestamp).toDateString() === dayStr)
+    .map(l => new Date(l.timestamp).getTime());
+  if (!times.length) return null;
+  return Math.max(0, 24 - (Math.max(...times) - Math.min(...times)) / 3600000);
+}
+
+// % of counted days in the bucket that hit their fasting target, or null.
+function bucketAdherence(startMs, endMs, eats, nowMs) {
+  let counted = 0, onT = 0;
+  const d = new Date(startMs); d.setHours(0, 0, 0, 0);
+  const endDay = new Date(endMs);
+  while (d <= endDay) {
+    const r = dayFastEval(d, eats, nowMs);
+    if (r.counted) { counted++; if (r.onTarget) onT++; }
+    d.setDate(d.getDate() + 1);
+  }
+  return counted ? (onT / counted) * 100 : null;
+}
+
 function drawWeightChart() {
   const canvas = document.getElementById("weightChart");
   const empty = document.getElementById("weightEmpty");
-  if (weights.length === 0) { empty.hidden = false; canvas.style.display = "none"; return; }
+  const buckets = trendBuckets(trendRange, new Date());
+  const ys = buckets.map(b => weightAvgInRange(b.start, b.end));
+  const present = ys.filter(v => v != null);
+  if (present.length === 0) { empty.hidden = false; canvas.style.display = "none"; return; }
   empty.hidden = true; canvas.style.display = "block";
   if (canvas.clientWidth === 0) return;   // Trends tab hidden — will redraw on show
 
-  const pts = weights.map(w => ({ x: new Date(w.timestamp), y: w.weightKg }));
-  const ys = pts.map(p => p.y);
-  const scale = niceScale(Math.min(...ys), Math.max(...ys), 4);
-
+  const scale = niceScale(Math.min(...present), Math.max(...present), 4);
   const { ctx, W, H } = prepCanvas(canvas, 210);
-  const a = drawAxes(ctx, W, H, scale, pts.map(p => p.x), "kg", "line");
+  const a = drawAxes(ctx, W, H, scale, buckets.map(b => b.label), "kg", "line");
 
   ctx.strokeStyle = "#D9A441"; ctx.lineWidth = 2; ctx.beginPath();
-  pts.forEach((p, i) => { const x = a.sx(i), y = a.sy(p.y); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); });
+  let started = false;
+  ys.forEach((v, i) => {
+    if (v == null) return;
+    const x = a.sx(i), y = a.sy(v);
+    if (!started) { ctx.moveTo(x, y); started = true; } else ctx.lineTo(x, y);
+  });
   ctx.stroke();
   ctx.fillStyle = "#D9A441";
-  pts.forEach((p, i) => { ctx.beginPath(); ctx.arc(a.sx(i), a.sy(p.y), 3, 0, Math.PI * 2); ctx.fill(); });
+  ys.forEach((v, i) => { if (v == null) return; ctx.beginPath(); ctx.arc(a.sx(i), a.sy(v), 3, 0, Math.PI * 2); ctx.fill(); });
 }
 
 function drawFastChart() {
   const canvas = document.getElementById("fastChart");
   const empty = document.getElementById("fastEmpty");
-  const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - 14);
-
-  const relevant = logs.filter(l => (l.type === "Meal" || l.type === "Drink") && new Date(l.timestamp) >= cutoff);
-  const byDay = {};
-  relevant.forEach(l => {
-    const d = new Date(l.timestamp);
-    const key = d.toDateString();
-    if (!byDay[key]) byDay[key] = [];
-    byDay[key].push(d);
-  });
-  const pts = Object.entries(byDay).map(([key, times]) => {
-    const eatingHours = (Math.max(...times) - Math.min(...times)) / 3600000;
-    return { x: new Date(key), y: Math.max(0, 24 - eatingHours) };
-  }).sort((a,b) => a.x - b.x);
-
-  if (pts.length === 0) { empty.hidden = false; canvas.style.display = "none"; return; }
+  const now = new Date(), nowMs = now.getTime();
+  const isWeek = trendRange === "week";
+  const buckets = trendBuckets(trendRange, now);
+  const eats = eatsAscending();
+  const ys = buckets.map(b => isWeek ? dayFastedHours(b.day) : bucketAdherence(b.start, b.end, eats, nowMs));
+  const present = ys.filter(v => v != null);
+  if (present.length === 0) { empty.hidden = false; canvas.style.display = "none"; return; }
   empty.hidden = true; canvas.style.display = "block";
   if (canvas.clientWidth === 0) return;
 
-  const maxY = Math.max(...pts.map(p => p.y), 1);
-  const scale = niceScale(0, maxY, 4);   // fasting hours start at 0
-
+  const scale = isWeek ? niceScale(0, Math.max(...present, 1), 4) : { min: 0, max: 100, step: 25 };
   const { ctx, W, H } = prepCanvas(canvas, 210);
-  const a = drawAxes(ctx, W, H, scale, pts.map(p => p.x), "hours", "bar");
+  const a = drawAxes(ctx, W, H, scale, buckets.map(b => b.label), isWeek ? "hours" : "% on-target", "bar");
 
-  const slot = a.plotW / pts.length;
-  const barW = Math.min(slot * 0.6, 26);
+  const barW = Math.min((a.plotW / buckets.length) * 0.6, 26);
   ctx.fillStyle = "#C1683F";
-  pts.forEach((p, i) => {
-    const cx = a.sx(i);
-    const y = a.sy(p.y);
+  ys.forEach((v, i) => {
+    if (v == null) return;
+    const cx = a.sx(i), y = a.sy(v);
     ctx.fillRect(cx - barW / 2, y, barW, (a.padT + a.plotH) - y);
   });
 }
+
+function setTrendRange(r) {
+  trendRange = r;
+  localStorage.setItem("mf_trend_range", r);
+  document.querySelectorAll("#trendRange .seg-btn").forEach(b => b.classList.toggle("active", b.dataset.range === r));
+  drawWeightChart();
+  drawFastChart();
+}
+document.getElementById("trendRange").addEventListener("click", (e) => {
+  const b = e.target.closest(".seg-btn");
+  if (b) setTrendRange(b.dataset.range);
+});
+document.querySelectorAll("#trendRange .seg-btn").forEach(b => b.classList.toggle("active", b.dataset.range === trendRange));
 
 /* ---------- Schedule tab ---------- */
 const DAY_NAMES = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
@@ -884,23 +1007,55 @@ function renderSchedule() {
 renderSchedule();
 
 /* ---------- Backup: export / import (Schedule tab) ---------- */
-function exportData() {
-  const payload = {
-    app: "MealFast", version: 1, exportedAt: new Date().toISOString(),
-    logs, weights, schedule
-  };
-  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
-  const url = URL.createObjectURL(blob);
+function dateStamp() {
   const d = new Date();
-  const stamp = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+}
+
+function triggerDownload(content, mime, filename) {
+  const blob = new Blob([content], { type: mime });
+  const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = `mealfast-backup-${stamp}.json`;
+  a.download = filename;
   document.body.appendChild(a);
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
-  showToast("Backup exported");
+}
+
+function exportData() {
+  const payload = { app: "MealFast", version: 1, exportedAt: new Date().toISOString(), logs, weights, schedule };
+  triggerDownload(JSON.stringify(payload, null, 2), "application/json", `mealfast-backup-${dateStamp()}.json`);
+  showToast("JSON backup exported");
+}
+
+// CSV: one download with two clearly-separated sections (reliable single tap on
+// iOS), oldest-first, spreadsheet-friendly.
+function csvCell(v) {
+  v = String(v == null ? "" : v);
+  return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v;
+}
+function csvDate(d) {
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+}
+function csvTime(d) {
+  return `${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;
+}
+function exportCsv() {
+  const entryRows = logs.slice()
+    .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))
+    .map(l => { const d = new Date(l.timestamp); return [csvDate(d), csvTime(d), l.type, l.note || ""].map(csvCell).join(","); });
+  const weightRows = weights.slice()
+    .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))
+    .map(w => { const d = new Date(w.timestamp); return [csvDate(d), csvTime(d), Number(w.weightKg).toFixed(1)].map(csvCell).join(","); });
+
+  const csv = [
+    "Entries", "date,time,type,note", ...entryRows,
+    "", "Weights", "date,time,weight_kg", ...weightRows
+  ].join("\n");
+  triggerDownload(csv, "text/csv", `mealfast-${dateStamp()}.csv`);
+  showToast("CSV exported");
 }
 
 // Replace all data from a parsed backup object. Returns true on success.
@@ -935,6 +1090,7 @@ function importData(file) {
 }
 
 document.getElementById("exportBtn").addEventListener("click", exportData);
+document.getElementById("exportCsvBtn").addEventListener("click", exportCsv);
 document.getElementById("importFile").addEventListener("change", (e) => {
   const file = e.target.files && e.target.files[0];
   if (file) importData(file);
@@ -945,8 +1101,19 @@ document.getElementById("importFile").addEventListener("change", (e) => {
 const GDRIVE_CLIENT_ID = "806898124104-agpuoau8aruceh5tte1hj079gjukr1r7.apps.googleusercontent.com";
 const GDRIVE_SCOPE = "https://www.googleapis.com/auth/drive.file";
 const GDRIVE_FILE_NAME = "mealfast-backup.json";
-const GD = { connected: "mf_gd_connected", last: "mf_gd_last", fileId: "mf_gd_fileid" };
+const GD = { connected: "mf_gd_connected", last: "mf_gd_last", fileId: "mf_gd_fileid", err: "mf_gd_err" };
 const BACKUP_INTERVAL_MS = 24 * 3600000;
+
+function relTime(iso) {
+  if (!iso) return null;
+  const m = Math.floor((Date.now() - new Date(iso).getTime()) / 60000);
+  if (m < 1) return "just now";
+  if (m < 60) return `${m} min ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h} hour${h === 1 ? "" : "s"} ago`;
+  const d = Math.floor(h / 24);
+  return `${d} day${d === 1 ? "" : "s"} ago`;
+}
 
 let gdTokenClient = null, gdAccessToken = null, gdTokenExpiry = 0;
 function gdReady() { return typeof google !== "undefined" && google.accounts && google.accounts.oauth2; }
@@ -1028,12 +1195,21 @@ function gdUpload(token, done, fail) {
 function gdBackup(interactive) {
   gdGetToken(interactive, (token) => {
     gdUpload(token, () => {
-      localStorage.setItem(GD.last, new Date().toISOString());
+      localStorage.setItem(GD.last, new Date().toISOString());  // last-known-good
       localStorage.setItem(GD.connected, "1");
+      localStorage.removeItem(GD.err);
       renderBackupStatus();
       if (interactive) showToast("Backed up to Drive");
-    }, () => { if (interactive) showToast("Drive backup failed"); });
-  }, (msg) => { if (interactive) showToast("Drive: " + msg); });
+    }, () => {
+      localStorage.setItem(GD.err, "Last sync failed — will retry");  // keep previous GD.last
+      renderBackupStatus();
+      if (interactive) showToast("Drive backup failed");
+    });
+  }, (msg) => {
+    localStorage.setItem(GD.err, "Sign-in needed to sync");
+    renderBackupStatus();
+    if (interactive) showToast("Google sign-in: " + msg);
+  });
 }
 
 function gdRestore() {
@@ -1081,24 +1257,29 @@ function renderBackupStatus() {
   const area = document.getElementById("gdriveArea");
   if (!area) return;
   const connected = localStorage.getItem(GD.connected) === "1";
+  const err = localStorage.getItem(GD.err);
+  const errLine = err ? `<div class="gd-err">${err}</div>` : "";
+
   if (!connected) {
-    area.innerHTML = `<button id="gdConnectBtn" class="eat-btn primary">Connect Google Drive</button>`;
+    area.innerHTML = `<button id="gdConnectBtn" class="eat-btn primary">Connect Google Drive</button>${errLine}`;
     document.getElementById("gdConnectBtn").addEventListener("click", () => gdBackup(true));
     return;
   }
-  const last = localStorage.getItem(GD.last);
-  const when = last ? new Date(last).toLocaleString([], { day: "2-digit", month: "short", hour: "numeric", minute: "2-digit" }) : "never";
+
+  const rel = relTime(localStorage.getItem(GD.last));
+  const status = rel ? `Last synced: ${rel}` : "Connected · not synced yet";
   area.innerHTML = `
-    <div class="gd-status">Google Drive backup on · last: ${when}</div>
+    <div class="gd-status">${status}</div>
     <div class="backup-row">
-      <button id="gdBackupBtn" class="eat-btn">Back up now</button>
+      <button id="gdBackupBtn" class="eat-btn">Sync now</button>
       <button id="gdRestoreBtn" class="eat-btn">Restore from Drive</button>
     </div>
+    ${errLine}
     <button id="gdDisconnectBtn" class="gd-disconnect">Disconnect Drive</button>`;
   document.getElementById("gdBackupBtn").addEventListener("click", () => gdBackup(true));
   document.getElementById("gdRestoreBtn").addEventListener("click", gdRestore);
   document.getElementById("gdDisconnectBtn").addEventListener("click", () => {
-    [GD.connected, GD.last, GD.fileId].forEach(k => localStorage.removeItem(k));
+    [GD.connected, GD.last, GD.fileId, GD.err].forEach(k => localStorage.removeItem(k));
     renderBackupStatus();
   });
 }

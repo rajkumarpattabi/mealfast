@@ -27,24 +27,24 @@
   <section id="tab-timer" class="tab active">
     <div class="welcome">
       <div id="greetingLine" class="greeting"></div>
-      <div id="greetingSub" class="greeting-sub"></div>
       <div id="greetingStreak" class="greeting-streak"></div>
     </div>
 
     <div class="timer-center">
+      <div id="stageHeading" class="stage-heading">Fasting</div>
+      <div id="goalLine" class="goal-line"></div>
       <div class="ring-wrap" id="ringWrap">
+        <div id="stageArt" class="stage-art"></div>
         <svg class="ring" viewBox="0 0 200 200">
           <circle class="ring-track" cx="100" cy="100" r="88"></circle>
           <circle id="ringProgress" class="ring-progress" cx="100" cy="100" r="88"></circle>
+          <circle id="ringDot" class="ring-dot" cx="100" cy="12" r="6" style="display:none"></circle>
         </svg>
         <div class="ring-center">
-          <span id="phaseLabel" class="phase-label">Fasting</span>
           <span id="countdownText" class="countdown-text">--:--:--</span>
-          <span id="phaseSub" class="phase-sub">until eating window opens</span>
           <span id="phaseSecondary" class="phase-secondary"></span>
         </div>
       </div>
-      <div id="nextMealRow" class="next-meal-row"></div>
     </div>
 
     <div class="eat-shortcut">
@@ -107,14 +107,20 @@
 
   <!-- TRENDS -->
   <section id="tab-trends" class="tab">
-    <div class="card">
-      <h3 class="section-title" style="margin-top:0">Weight trend</h3>
-      <canvas id="weightChart" width="320" height="210"></canvas>
-      <div id="weightEmpty" class="empty-note">No weight entries yet.</div>
+    <div class="seg" id="trendRange">
+      <button class="seg-btn active" data-range="week">Week</button>
+      <button class="seg-btn" data-range="month">Month</button>
+      <button class="seg-btn" data-range="year">Year</button>
     </div>
 
     <div class="card">
-      <h3 class="section-title" style="margin-top:0">Fasting window, last 14 days</h3>
+      <h3 class="section-title" style="margin-top:0">Weight trend</h3>
+      <canvas id="weightChart" width="320" height="210"></canvas>
+      <div id="weightEmpty" class="empty-note">No weight entries in this range.</div>
+    </div>
+
+    <div class="card">
+      <h3 class="section-title" style="margin-top:0">Fasting</h3>
       <canvas id="fastChart" width="320" height="210"></canvas>
       <div id="fastEmpty" class="empty-note">Log a few meals to see this trend.</div>
     </div>
@@ -128,11 +134,14 @@
 
     <h3 class="section-title">Backup — file</h3>
     <div class="backup-row">
-      <button id="exportBtn" class="eat-btn">Export data</button>
+      <button id="exportBtn" class="eat-btn">Export JSON</button>
+      <button id="exportCsvBtn" class="eat-btn">Export CSV</button>
+    </div>
+    <div class="backup-row" style="margin-top:8px">
       <label class="eat-btn" for="importFile">Import data</label>
       <input type="file" id="importFile" accept="application/json,.json" hidden>
     </div>
-    <p class="sched-hint">Export saves all your logs, weights and schedule to a file. Import restores everything from one.</p>
+    <p class="sched-hint">JSON is the full backup used to restore the app. CSV (entries + weights, oldest-first) is for opening in a spreadsheet. Import restores from a JSON backup.</p>
 
     <h3 class="section-title">Backup — Google Drive</h3>
     <div id="gdriveArea" class="gdrive-area"></div>
