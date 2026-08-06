@@ -574,8 +574,9 @@ canvas { width: 100%; height: 210px; display: block; }
 .weight-status { font-size: 12px; text-align: center; margin-top: 8px; font-weight: 600; }
 
 /* ---- Entries: separate date & time ---- */
-.exact-wrap { display: flex; gap: 10px; margin-bottom: 10px; }
-.exact-wrap .exact-input { flex: 1; margin-bottom: 0; }
+.exact-wrap { display: flex; align-items: stretch; gap: 8px; margin-bottom: 0; }
+.exact-wrap .exact-input { flex: 1 1 0; min-width: 0; margin-bottom: 0; padding: 10px 8px; font-size: 13px; }
+.exact-wrap .primary-btn.small { flex: 0 0 auto; padding: 10px 16px; align-self: stretch; }
 
 /* ---- Weight target (Targets tab) ---- */
 .wtarget-row { display: flex; gap: 10px; align-items: center; }

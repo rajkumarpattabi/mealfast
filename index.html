@@ -61,6 +61,8 @@
   <section id="tab-entries" class="tab">
     <h3 class="section-title" style="margin-top:8px">Log meal / drink</h3>
     <div class="card">
+      <input type="text" id="noteInput" class="note-input" placeholder="Note (optional) — e.g. meen kuzhambu + ragi">
+
       <div class="quick-row" id="quickRow">
         <button class="quick-btn" data-min="0">Now</button>
         <button class="quick-btn" data-min="15">15m ago</button>
@@ -68,19 +70,13 @@
         <button class="quick-btn" data-min="60">1h ago</button>
       </div>
 
-      <label class="exact-toggle">
-        <input type="checkbox" id="exactTimeToggle">
-        <span>Set exact date &amp; time</span>
-      </label>
-      <div id="exactWrap" class="exact-wrap" hidden>
+      <p class="sched-hint" style="margin:0 0 10px">Tap a button above to log instantly, or set a date &amp; time and Save.</p>
+
+      <div class="exact-wrap">
         <input type="date" id="exactDate" class="exact-input">
         <input type="time" id="exactTime" class="exact-input">
+        <button id="saveLogBtn" class="primary-btn small">Save</button>
       </div>
-      <div id="selectedTimeDisplay" class="selected-time"></div>
-
-      <input type="text" id="noteInput" class="note-input" placeholder="Note (optional) — e.g. meen kuzhambu + ragi">
-
-      <button id="saveLogBtn" class="primary-btn">Log meal / drink</button>
     </div>
 
     <h3 class="section-title">Weight input</h3>

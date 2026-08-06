@@ -474,40 +474,6 @@ document.querySelectorAll(".tab-btn").forEach(btn => {
 });
 
 /* ---------- Entries tab: log a meal / drink ---------- */
-let selectedTime = new Date();
-
-document.getElementById("quickRow").addEventListener("click", (e) => {
-  const b = e.target.closest(".quick-btn");
-  if (!b) return;
-  const mins = parseInt(b.dataset.min, 10);
-  selectedTime = new Date(Date.now() - mins * 60000);
-  document.getElementById("exactTimeToggle").checked = false;
-  document.getElementById("exactWrap").hidden = true;
-  updateSelectedTimeDisplay();
-});
-
-// "Set exact date & time" reveals separate date and time pickers.
-document.getElementById("exactTimeToggle").addEventListener("change", (e) => {
-  const wrap = document.getElementById("exactWrap");
-  wrap.hidden = !e.target.checked;
-  if (e.target.checked) {
-    document.getElementById("exactDate").value = toDateInput(selectedTime);
-    document.getElementById("exactTime").value = toTimeInput(selectedTime);
-  } else {
-    selectedTime = new Date();
-  }
-  updateSelectedTimeDisplay();
-});
-
-function readExactInputs() {
-  const dv = document.getElementById("exactDate").value;
-  const tv = document.getElementById("exactTime").value;
-  if (!dv || !tv) return;
-  const d = new Date(`${dv}T${tv}`);
-  if (!isNaN(d.getTime())) { selectedTime = d; updateSelectedTimeDisplay(); }
-}
-document.getElementById("exactDate").addEventListener("change", readExactInputs);
-document.getElementById("exactTime").addEventListener("change", readExactInputs);
 
 function toDateInput(d) {
   const p = n => String(n).padStart(2, "0");
@@ -521,25 +487,44 @@ function toLocalInputValue(date) {   // used by the edit sheet's datetime-local
   return `${toDateInput(date)}T${toTimeInput(date)}`;
 }
 
-function updateSelectedTimeDisplay() {
-  document.getElementById("selectedTimeDisplay").textContent =
-    "Logging at " + selectedTime.toLocaleString([], { month: "short", day: "2-digit", hour: "numeric", minute: "2-digit" });
+// Reset the date/time inputs to "now" (called on load + after each save).
+function resetEntryDateTime() {
+  const now = new Date();
+  document.getElementById("exactDate").value = toDateInput(now);
+  document.getElementById("exactTime").value = toTimeInput(now);
 }
-updateSelectedTimeDisplay();
 
-document.getElementById("saveLogBtn").addEventListener("click", () => {
-  const note = document.getElementById("noteInput").value.trim();
-  logs.unshift({ id: uid(), type: "Meal", note, timestamp: selectedTime.toISOString() });
+// Save a meal/drink log at the given time, using the current note field.
+function saveMealLog(when) {
+  const noteEl = document.getElementById("noteInput");
+  const note = noteEl.value.trim();
+  logs.unshift({ id: uid(), type: "Meal", note, timestamp: when.toISOString() });
   save(STORE_KEYS.logs, logs);
-  document.getElementById("noteInput").value = "";
-  selectedTime = new Date();
-  document.getElementById("exactTimeToggle").checked = false;
-  document.getElementById("exactWrap").hidden = true;
-  updateSelectedTimeDisplay();
+  noteEl.value = "";
+  resetEntryDateTime();
   renderLogs();
   renderTimer();      // a new meal changes the current fast immediately
   showToast("Logged");
+}
+
+// One-click quick buttons: log instantly at (now − N minutes).
+document.getElementById("quickRow").addEventListener("click", (e) => {
+  const b = e.target.closest(".quick-btn");
+  if (!b) return;
+  const mins = parseInt(b.dataset.min, 10);
+  saveMealLog(new Date(Date.now() - mins * 60000));
 });
+
+// Save button: log at the date & time shown in the inputs (defaults to now).
+document.getElementById("saveLogBtn").addEventListener("click", () => {
+  const dv = document.getElementById("exactDate").value;
+  const tv = document.getElementById("exactTime").value;
+  const d = (dv && tv) ? new Date(`${dv}T${tv}`) : new Date();
+  if (isNaN(d.getTime())) { showToast("Enter a valid date & time"); return; }
+  saveMealLog(d);
+});
+
+resetEntryDateTime();
 
 // The Logs tab: every meal/drink/water/electrolyte log (including the Timer-tab
 // eating markers) plus every weight entry, newest first, each deletable.
