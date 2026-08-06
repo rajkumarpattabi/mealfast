@@ -89,10 +89,8 @@ main {
 .stat-row {
   display: flex;
   gap: 10px;
-  max-width: 340px;
   width: 100%;
-  margin: 22px auto 0 auto;
-  padding: 0 4px;
+  margin: 22px 0 0 0;
   align-items: stretch;
 }
 .stat-box {
@@ -458,6 +456,46 @@ main {
 
 /* ---- Logs tab ---- */
 .log-list { list-style: none; margin: 0; padding: 0; }
+
+/* ---- Logs tab: collapsible sections ---- */
+.log-section { margin-bottom: 4px; }
+.log-sec-head {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  background: transparent;
+  border: none;
+  color: var(--cream);
+  padding: 12px 4px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  font-family: inherit;
+}
+.log-sec-chev {
+  color: var(--muted);
+  font-size: 13px;
+  display: inline-block;
+  transition: transform 0.18s ease;
+}
+.log-sec-head.open .log-sec-chev { transform: rotate(90deg); }
+.log-sec-title {
+  flex: 1;
+  text-align: left;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+.log-sec-count {
+  color: var(--muted);
+  font-weight: 600;
+  font-size: 12px;
+  background: var(--ink-2);
+  padding: 2px 9px;
+  border-radius: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.log-sec-empty { color: var(--muted); font-size: 13px; padding: 4px 4px 12px; }
 
 .log-item {
   display: flex;

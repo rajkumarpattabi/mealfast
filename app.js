@@ -589,6 +589,9 @@ document.getElementById("saveLogBtn").addEventListener("click", () => {
 
 resetEntryDateTime();
 
+// Collapse state for the Logs tab sections (Today open by default).
+const logSectionsOpen = { today: true, week: false, older: false };
+
 // The Logs tab: every meal/drink/water/electrolyte log (including the Timer-tab
 // eating markers) plus every weight entry, newest first, each deletable.
 function renderLogs() {
@@ -612,26 +615,75 @@ function renderLogs() {
   if (items.length === 0) { empty.hidden = false; return; }
   empty.hidden = true;
 
+  // Group into Today / This Week (past 6 days) / Older (7+ days ago).
+  const now = new Date();
+  const todayStart = new Date(now); todayStart.setHours(0, 0, 0, 0);
+  const weekBound = todayStart.getTime() - 6 * 86400000;   // start of the day 6 days ago
+  const groups = { today: [], week: [], older: [] };
   items.forEach(it => {
-    const li = document.createElement("li");
-    li.className = "log-item";
-    li.dataset.kind = it.kind;
-    li.dataset.id = it.id;
-    li.innerHTML = `
-      <span class="li-date">${fmtDate(it.when)}</span>
-      <div class="li-main">
-        <div class="li-type">${it.type}</div>
-        ${it.note ? `<div class="li-note">${escapeHtml(it.note)}</div>` : ""}
-      </div>
-      <span class="li-val">${it.value}</span>
-      <span class="li-chev">›</span>`;
-    list.appendChild(li);
+    const t = it.when.getTime();
+    if (t >= todayStart.getTime()) groups.today.push(it);
+    else if (t >= weekBound) groups.week.push(it);
+    else groups.older.push(it);
   });
 
-  // Tap a row to edit or delete it.
-  list.querySelectorAll(".log-item").forEach(li => {
-    li.addEventListener("click", () => openEditSheet(li.dataset.kind, li.dataset.id));
+  const sections = [
+    { key: "today", title: "Today",     items: groups.today, always: true },
+    { key: "week",  title: "This Week", items: groups.week },
+    { key: "older", title: "Older",     items: groups.older }
+  ];
+
+  sections.forEach(sec => {
+    if (!sec.always && sec.items.length === 0) return;
+    const open = logSectionsOpen[sec.key];
+
+    const secEl = document.createElement("div");
+    secEl.className = "log-section";
+
+    const head = document.createElement("button");
+    head.className = "log-sec-head" + (open ? " open" : "");
+    head.innerHTML =
+      `<span class="log-sec-chev">▸</span>` +
+      `<span class="log-sec-title">${sec.title}</span>` +
+      `<span class="log-sec-count">${sec.items.length}</span>`;
+    head.addEventListener("click", () => {
+      logSectionsOpen[sec.key] = !logSectionsOpen[sec.key];
+      renderLogs();
+    });
+    secEl.appendChild(head);
+
+    const body = document.createElement("div");
+    body.className = "log-sec-body";
+    if (!open) body.hidden = true;
+    if (sec.items.length === 0) {
+      body.innerHTML = `<div class="log-sec-empty">No entries yet today.</div>`;
+    } else {
+      const ul = document.createElement("ul");
+      ul.className = "log-list";
+      sec.items.forEach(it => ul.appendChild(buildLogItem(it)));
+      body.appendChild(ul);
+    }
+    secEl.appendChild(body);
+    list.appendChild(secEl);
   });
+}
+
+// Build one log row (with its tap-to-edit handler).
+function buildLogItem(it) {
+  const li = document.createElement("li");
+  li.className = "log-item";
+  li.dataset.kind = it.kind;
+  li.dataset.id = it.id;
+  li.innerHTML = `
+    <span class="li-date">${fmtDate(it.when)}</span>
+    <div class="li-main">
+      <div class="li-type">${it.type}</div>
+      ${it.note ? `<div class="li-note">${escapeHtml(it.note)}</div>` : ""}
+    </div>
+    <span class="li-val">${it.value}</span>
+    <span class="li-chev">›</span>`;
+  li.addEventListener("click", () => openEditSheet(li.dataset.kind, li.dataset.id));
+  return li;
 }
 
 // Re-render everything that depends on logs/weights after an edit or delete.
