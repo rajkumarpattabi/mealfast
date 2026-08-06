@@ -876,27 +876,40 @@ function weightAvgInRange(startMs, endMs) {
   return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
 }
 
-// Raw fasted hours for a single calendar day (24 − eating span), or null.
-function dayFastedHours(d) {
+// Actual fast that STARTED on day `d`: real duration (last meal of the day →
+// next time you ate, or now if still fasting), that day's target, and whether
+// it was met. null if no fast started that day.
+function dayActualFast(d, eats, nowMs) {
   const dayStr = d.toDateString();
-  const times = logs
-    .filter(l => (l.type === "Meal" || l.type === "Drink") && new Date(l.timestamp).toDateString() === dayStr)
-    .map(l => new Date(l.timestamp).getTime());
-  if (!times.length) return null;
-  return Math.max(0, 24 - (Math.max(...times) - Math.min(...times)) / 3600000);
+  const dayEats = eats.filter(t => new Date(t).toDateString() === dayStr);
+  if (!dayEats.length) return null;
+  const lastMeal = Math.max(...dayEats);
+  const target = targetHoursFor(d);
+  const nextMeal = eats.find(t => t > lastMeal);
+  const endMs = nextMeal != null ? nextMeal : nowMs;   // completed, or ongoing so far
+  const hours = Math.max(0, (endMs - lastMeal) / 3600000);
+  return { hours, target, met: hours >= target };
 }
 
-// % of counted days in the bucket that hit their fasting target, or null.
-function bucketAdherence(startMs, endMs, eats, nowMs) {
-  let counted = 0, onT = 0;
-  const d = new Date(startMs); d.setHours(0, 0, 0, 0);
-  const endDay = new Date(endMs);
+// Bucket value for the fasting chart: actual fast hours (per day for Week,
+// averaged over the bucket's days for Month/Year), plus the applicable target
+// and whether it was met. null if no fast in the bucket.
+function fastBucketValue(bucket, isWeek, eats, nowMs) {
+  if (isWeek) {
+    const r = dayActualFast(bucket.day, eats, nowMs);
+    return r ? { value: r.hours, target: r.target, met: r.met } : null;
+  }
+  let sum = 0, tsum = 0, n = 0;
+  const d = new Date(bucket.start); d.setHours(0, 0, 0, 0);
+  const endDay = new Date(bucket.end);
   while (d <= endDay) {
-    const r = dayFastEval(d, eats, nowMs);
-    if (r.counted) { counted++; if (r.onTarget) onT++; }
+    const r = dayActualFast(new Date(d), eats, nowMs);
+    if (r) { sum += r.hours; tsum += r.target; n++; }
     d.setDate(d.getDate() + 1);
   }
-  return counted ? (onT / counted) * 100 : null;
+  if (!n) return null;
+  const avg = sum / n, avgT = tsum / n;
+  return { value: avg, target: avgT, met: avg >= avgT };
 }
 
 function drawWeightChart() {
@@ -932,21 +945,25 @@ function drawFastChart() {
   const isWeek = trendRange === "week";
   const buckets = trendBuckets(trendRange, now);
   const eats = eatsAscending();
-  const ys = buckets.map(b => isWeek ? dayFastedHours(b.day) : bucketAdherence(b.start, b.end, eats, nowMs));
-  const present = ys.filter(v => v != null);
+  const data = buckets.map(b => fastBucketValue(b, isWeek, eats, nowMs));   // {value,target,met}|null
+  const present = data.filter(x => x != null);
   if (present.length === 0) { empty.hidden = false; canvas.style.display = "none"; return; }
   empty.hidden = true; canvas.style.display = "block";
   if (canvas.clientWidth === 0) return;
 
-  const scale = isWeek ? niceScale(0, Math.max(...present, 1), 4) : { min: 0, max: 100, step: 25 };
+  // Scale to include the target so bars that fall short visibly don't reach it.
+  const maxV = Math.max(...present.map(x => x.value), 1);
+  const maxT = Math.max(...present.map(x => x.target), 1);
+  const scale = niceScale(0, Math.max(maxV, maxT), 4);
+
   const { ctx, W, H } = prepCanvas(canvas, 210);
-  const a = drawAxes(ctx, W, H, scale, buckets.map(b => b.label), isWeek ? "hours" : "% on-target", "bar");
+  const a = drawAxes(ctx, W, H, scale, buckets.map(b => b.label), "hours", "bar");
 
   const barW = Math.min((a.plotW / buckets.length) * 0.6, 26);
-  ctx.fillStyle = "#C1683F";
-  ys.forEach((v, i) => {
-    if (v == null) return;
-    const cx = a.sx(i), y = a.sy(v);
+  data.forEach((x, i) => {
+    if (x == null) return;
+    ctx.fillStyle = x.met ? fastColor(1) : fastColor(0);   // green if target met, red if short
+    const cx = a.sx(i), y = a.sy(x.value);
     ctx.fillRect(cx - barW / 2, y, barW, (a.padT + a.plotH) - y);
   });
 }
