@@ -287,25 +287,31 @@ loadUserName();
 /* ---- Fasting-stage background art (driven by ELAPSED hours, not goal %) ---- */
 const ART_OPACITY = 0.16;
 const STAGE_ART = {
-  digesting: `<svg viewBox="0 0 100 100" class="art-svg"><circle cx="50" cy="70" r="22"/><circle cx="50" cy="70" r="13"/></svg>`,
-  glycogen:  `<svg viewBox="0 0 100 100" class="art-svg"><polygon points="50,70 44,80.4 32,80.4 26,70 32,59.6 44,59.6"/><polygon points="74,70 68,80.4 56,80.4 50,70 56,59.6 68,59.6"/></svg>`,
-  fat:       `<svg viewBox="0 0 100 100" class="art-svg"><path d="M50,50 C62,68 62,82 50,88 C38,82 38,68 50,50 Z"/></svg>`,
-  ketosis:   `<svg viewBox="0 0 100 100" class="art-svg"><line x1="50" y1="58" x2="38" y2="78"/><line x1="50" y1="58" x2="62" y2="78"/><line x1="38" y1="78" x2="62" y2="78"/><circle cx="50" cy="58" r="6"/><circle cx="38" cy="78" r="6"/><circle cx="62" cy="78" r="6"/></svg>`,
-  autophagy: `<svg viewBox="0 0 100 100" class="art-svg"><circle cx="50" cy="70" r="22"/><path d="M40,62 A12,12 0 1 0 44,58"/><circle cx="50" cy="70" r="5"/></svg>`,
-  deep:      `<svg viewBox="0 0 100 100" class="art-svg"><line x1="50" y1="92" x2="50" y2="64"/><path d="M50,74 C40,74 33,66 35,58 C45,58 50,66 50,74 Z"/><path d="M50,70 C60,70 67,62 65,54 C55,54 50,62 50,70 Z"/></svg>`
+  digesting:      `<svg viewBox="0 0 100 100" class="art-svg"><circle cx="50" cy="70" r="22"/><circle cx="50" cy="70" r="13"/></svg>`,
+  postabsorptive: `<svg viewBox="0 0 100 100" class="art-svg"><line x1="50" y1="50" x2="50" y2="84"/><path d="M36,70 L50,86 L64,70"/></svg>`,
+  glycogen:       `<svg viewBox="0 0 100 100" class="art-svg"><polygon points="50,70 44,80.4 32,80.4 26,70 32,59.6 44,59.6"/><polygon points="74,70 68,80.4 56,80.4 50,70 56,59.6 68,59.6"/></svg>`,
+  fat:            `<svg viewBox="0 0 100 100" class="art-svg"><path d="M50,50 C62,68 62,82 50,88 C38,82 38,68 50,50 Z"/></svg>`,
+  earlyketosis:   `<svg viewBox="0 0 100 100" class="art-svg"><circle cx="40" cy="70" r="9"/><circle cx="64" cy="70" r="9"/><line x1="49" y1="70" x2="55" y2="70"/></svg>`,
+  ketosis:        `<svg viewBox="0 0 100 100" class="art-svg"><line x1="50" y1="58" x2="38" y2="78"/><line x1="50" y1="58" x2="62" y2="78"/><line x1="38" y1="78" x2="62" y2="78"/><circle cx="50" cy="58" r="6"/><circle cx="38" cy="78" r="6"/><circle cx="62" cy="78" r="6"/></svg>`,
+  autophagy:      `<svg viewBox="0 0 100 100" class="art-svg"><circle cx="50" cy="70" r="22"/><path d="M40,62 A12,12 0 1 0 44,58"/><circle cx="50" cy="70" r="5"/></svg>`,
+  deep:           `<svg viewBox="0 0 100 100" class="art-svg"><line x1="50" y1="92" x2="50" y2="64"/><path d="M50,74 C40,74 33,66 35,58 C45,58 50,66 50,74 Z"/><path d="M50,70 C60,70 67,62 65,54 C55,54 50,62 50,70 Z"/></svg>`
 };
+// Elapsed-hour fasting stages. The 4–18h window is split finely since that's
+// where most fasts live. Names kept physiologically accurate (no invented terms).
 function stageForHours(h) {
-  if (h < 4)  return { key: "digesting", name: "Digesting" };
-  if (h < 12) return { key: "glycogen",  name: "Glycogen Burning" };
-  if (h < 18) return { key: "fat",       name: "Fat-Adaptation" };
-  if (h < 24) return { key: "ketosis",   name: "Ketosis" };
-  if (h < 48) return { key: "autophagy", name: "Autophagy Rising" };
+  if (h < 4)  return { key: "digesting",      name: "Digesting" };
+  if (h < 8)  return { key: "postabsorptive", name: "Post-Absorptive" };
+  if (h < 12) return { key: "glycogen",       name: "Glycogen Burning" };
+  if (h < 16) return { key: "fat",            name: "Fat Burning" };
+  if (h < 18) return { key: "earlyketosis",   name: "Early Ketosis" };
+  if (h < 24) return { key: "ketosis",        name: "Ketosis" };
+  if (h < 48) return { key: "autophagy",      name: "Autophagy Rising" };
   return { key: "deep", name: "Deep Autophagy" };
 }
 
 // The next fasting stage and how long until it begins, given elapsed ms.
 // Returns null once you're in the deepest stage (nothing further to count to).
-const STAGE_BOUNDS_H = [4, 12, 18, 24, 48];
+const STAGE_BOUNDS_H = [4, 8, 12, 16, 18, 24, 48];
 function nextStageInfo(elapsedMs) {
   const h = elapsedMs / 3600000;
   for (const bh of STAGE_BOUNDS_H) {
