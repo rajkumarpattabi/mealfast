@@ -715,7 +715,14 @@ canvas { width: 100%; height: 210px; display: block; }
 .insight-body .wt-bad { color: var(--chili); }
 
 /* ---- Consistency heatmap ---- */
-.heatmap { display: flex; gap: 3px; justify-content: center; }
+.heatmap { display: flex; flex-direction: column; align-items: center; }
+/* left day-label column is 20px wide; month row is offset to sit over the grid */
+.heat-months { display: flex; padding-left: 20px; align-self: center; }
+.heat-mon { width: 14px; margin-right: 3px; font-size: 8px; line-height: 1; color: var(--muted); white-space: nowrap; overflow: visible; }
+.heat-body { display: flex; }
+.heat-days { display: flex; flex-direction: column; gap: 3px; width: 20px; }
+.heat-dow { height: 14px; display: flex; align-items: center; font-size: 8px; line-height: 1; color: var(--muted); }
+.heat-grid { display: flex; gap: 3px; }
 .heat-col { display: flex; flex-direction: column; gap: 3px; }
 .heat-cell { width: 14px; height: 14px; border-radius: 3px; }
 .heat-green { background: hsl(120, 55%, 42%); }

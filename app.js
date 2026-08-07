@@ -1412,9 +1412,25 @@ function renderHeatmap() {
   const start = new Date(now); start.setHours(0, 0, 0, 0);
   start.setDate(start.getDate() - now.getDay() - (WEEKS - 1) * 7);
 
-  let html = "";
+  // Month labels above the columns — shown when a column's week enters a new month.
+  let monthsHtml = "";
+  let prevMonth = -1;
   for (let w = 0; w < WEEKS; w++) {
-    html += `<div class="heat-col">`;
+    const colSunday = new Date(start); colSunday.setDate(start.getDate() + w * 7);
+    const m = colSunday.getMonth();
+    monthsHtml += `<span class="heat-mon">${m !== prevMonth ? MONTHS[m] : ""}</span>`;
+    prevMonth = m;
+  }
+
+  // Day-of-week labels down the left (rows are Sun→Sat).
+  const DOW = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
+  let daysHtml = "";
+  for (let d = 0; d < 7; d++) daysHtml += `<span class="heat-dow">${DOW[d]}</span>`;
+
+  // The grid: one column per week, one cell per day.
+  let gridHtml = "";
+  for (let w = 0; w < WEEKS; w++) {
+    gridHtml += `<div class="heat-col">`;
     for (let d = 0; d < 7; d++) {
       const cell = new Date(start); cell.setDate(start.getDate() + w * 7 + d);
       let cls = "heat-none";
@@ -1424,11 +1440,15 @@ function renderHeatmap() {
       } else {
         cls = "heat-future";
       }
-      html += `<span class="heat-cell ${cls}" title="${fmtDate(cell)}"></span>`;
+      gridHtml += `<span class="heat-cell ${cls}" title="${fmtDate(cell)}"></span>`;
     }
-    html += `</div>`;
+    gridHtml += `</div>`;
   }
-  host.innerHTML = html;
+
+  host.innerHTML =
+    `<div class="heat-months">${monthsHtml}</div>` +
+    `<div class="heat-body"><div class="heat-days">${daysHtml}</div>` +
+    `<div class="heat-grid">${gridHtml}</div></div>`;
 }
 
 /* ---------- Backup: export / import (Schedule tab) ---------- */
