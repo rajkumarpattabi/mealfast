@@ -1212,7 +1212,9 @@ function weightTargetLine(buckets) {
   const sign = wtarget.dir === "reduce" ? -1 : 1;
   const at = ms => baseKg + sign * wtarget.rate * ((ms - baseMs) / (7 * 86400000));   // baseKg ± rate·weeks
   const repMs = b => b.day ? (b.day.getTime() + 43200000) : (b.start + b.end) / 2;
-  const targetYs = buckets.map(b => at(repMs(b)));
+  // Start the target line at the first weigh-in — never extrapolate it backwards
+  // onto dates before you had any weight logged.
+  const targetYs = buckets.map(b => (b.end < baseMs ? null : at(Math.max(repMs(b), baseMs))));
   return { active: true, targetYs, baseKg, targetToday: at(Date.now()) };
 }
 
@@ -1221,36 +1223,44 @@ function drawFastChart() {
   const empty = document.getElementById("fastEmpty");
   const now = new Date(), nowMs = now.getTime();
   const isWeek = trendRange === "week";
+  const isYear = trendRange === "year";
   const buckets = trendBuckets(trendRange, now);
   const eats = eatsAscending();
-  const data = buckets.map(b => fastBucketValue(b, isWeek, eats, nowMs));   // {value,target,met}|null
+
+  // Week/Month: actual fast hours per bar. Year: monthly adherence % (share of the
+  // month's counted days that hit target) — a clearer yearly "how consistent" story
+  // than averaging fast lengths, and it pairs with the year heatmap below.
+  const data = isYear
+    ? buckets.map(b => monthAdherence(b, eats, nowMs))     // {value(0-100), rate}|null
+    : buckets.map(b => fastBucketValue(b, isWeek, eats, nowMs));  // {value(hrs),target,met}|null
   const present = data.filter(x => x != null);
   if (present.length === 0) { empty.hidden = false; canvas.style.display = "none"; return; }
   empty.hidden = true; canvas.style.display = "block";
   if (canvas.clientWidth === 0) return;
 
-  // Scale to include the target so bars that fall short visibly don't reach it.
-  const maxV = Math.max(...present.map(x => x.value), 1);
-  const maxT = Math.max(...present.map(x => x.target), 1);
-  const scale = niceScale(0, Math.max(maxV, maxT), 4);
+  const scale = isYear
+    ? niceScale(0, 100, 4)
+    : niceScale(0, Math.max(Math.max(...present.map(x => x.value), 1), Math.max(...present.map(x => x.target), 1)), 4);
 
   const { ctx, W, H } = prepCanvas(canvas, 210);
-  const a = drawAxes(ctx, W, H, scale, buckets.map(b => b.label), "hours", "bar");
+  const a = drawAxes(ctx, W, H, scale, buckets.map(b => b.label), isYear ? "% on target" : "hours", "bar");
 
   const barW = Math.min((a.plotW / buckets.length) * 0.6, 26);
   const base = a.padT + a.plotH;
   data.forEach((x, i) => {
     if (x == null) return;
     const cx = a.sx(i), y = a.sy(x.value), barH = base - y;
-    ctx.fillStyle = x.met ? fastColor(1) : fastColor(0);   // green if target met, red if short
+    // Year: colour by adherence (red→green gradient). Week/Month: green if met, else red.
+    ctx.fillStyle = isYear ? fastColor(x.rate) : (x.met ? fastColor(1) : fastColor(0));
     ctx.fillRect(cx - barW / 2, y, barW, barH);
 
-    // Actual hours (rounded down), tiny, centred inside the bar — only when the
-    // bar is wide enough to read (skipped for the dense 30-day Month view).
-    if (barW < 12) return;
+    // Tiny value label inside the bar — only when bars are wide/sparse enough to
+    // read (skipped for the dense 30-day Month view and the 12-bar Year %, which
+    // would otherwise overlap; the y-axis carries the scale there).
+    if (barW < 12 || isYear) return;
     ctx.font = "600 9px -apple-system, system-ui, sans-serif";
     ctx.textAlign = "center";
-    const label = String(Math.floor(x.value));
+    const label = isYear ? `${Math.round(x.value)}%` : String(Math.floor(x.value));
     if (barH >= 16) {
       ctx.fillStyle = "#1B2430";       // dark, reads on the bright bar
       ctx.textBaseline = "middle";
@@ -1261,6 +1271,19 @@ function drawFastChart() {
       ctx.fillText(label, cx, y - 2);
     }
   });
+}
+
+// Adherence over a bucket's days: share (0–100) of counted days that hit target.
+function monthAdherence(bucket, eats, nowMs) {
+  let hit = 0, tot = 0;
+  const d = new Date(bucket.start); d.setHours(0, 0, 0, 0);
+  const end = new Date(bucket.end);
+  while (d <= end) {
+    const ev = dayFastEval(new Date(d), eats, nowMs);
+    if (ev.counted) { tot++; if (ev.onTarget) hit++; }
+    d.setDate(d.getDate() + 1);
+  }
+  return tot ? { value: (hit / tot) * 100, rate: hit / tot, hit, tot } : null;
 }
 
 function setTrendRange(r) {
