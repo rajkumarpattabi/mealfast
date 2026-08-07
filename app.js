@@ -1042,10 +1042,9 @@ function trendBuckets(range, now) {
       buckets.push({ label: fmtDate(d), day: new Date(d), start: d.getTime(), end: d.getTime() + 86400000 - 1 });
     }
   } else if (range === "month") {
-    for (let b = 4; b >= 0; b--) {                       // 5 rolling 7-day buckets back from today
-      const end = new Date(now); end.setDate(now.getDate() - 7 * b); end.setHours(23, 59, 59, 999);
-      const start = new Date(end); start.setDate(end.getDate() - 6); start.setHours(0, 0, 0, 0);
-      buckets.push({ label: fmtDate(start), start: start.getTime(), end: end.getTime() });
+    for (let i = 29; i >= 0; i--) {                      // last 30 days, one bucket per day
+      const d = new Date(now); d.setDate(now.getDate() - i); d.setHours(0, 0, 0, 0);
+      buckets.push({ label: fmtDate(d), day: new Date(d), start: d.getTime(), end: d.getTime() + 86400000 - 1 });
     }
   } else {                                               // year: 12 calendar months
     for (let b = 11; b >= 0; b--) {
@@ -1092,7 +1091,7 @@ function dayActualFast(d, eats, nowMs) {
 // averaged over the bucket's days for Month/Year), plus the applicable target
 // and whether it was met. null if no fast in the bucket.
 function fastBucketValue(bucket, isWeek, eats, nowMs) {
-  if (isWeek) {
+  if (bucket.day) {                                    // single-day bucket (Week + Month)
     const r = dayActualFast(bucket.day, eats, nowMs);
     return r ? { value: r.hours, target: r.target, met: r.met } : null;
   }
@@ -1246,7 +1245,9 @@ function drawFastChart() {
     ctx.fillStyle = x.met ? fastColor(1) : fastColor(0);   // green if target met, red if short
     ctx.fillRect(cx - barW / 2, y, barW, barH);
 
-    // Actual hours (rounded down), tiny, centred inside the bar.
+    // Actual hours (rounded down), tiny, centred inside the bar — only when the
+    // bar is wide enough to read (skipped for the dense 30-day Month view).
+    if (barW < 12) return;
     ctx.font = "600 9px -apple-system, system-ui, sans-serif";
     ctx.textAlign = "center";
     const label = String(Math.floor(x.value));
