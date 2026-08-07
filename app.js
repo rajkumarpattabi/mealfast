@@ -470,24 +470,28 @@ function renderTimer() {
     if (state.phase === "fasting") {
       setRingDot(frac, col, true);
       const pctDone = Math.min(100, Math.round(frac * 100));
+      // Circle and box (b) always show OPPOSITE views, so both numbers are visible
+      // at once; tapping either swaps them together.
       if (timerMode === "elapsed") {
-        countdown.textContent = formatHMS(elapsed);
+        countdown.textContent = formatHMS(elapsed);          // circle → elapsed
         pctEl.textContent = `${pctDone}% of goal`;
-        tglLabel.textContent = "Fasting";
-        tglVal.textContent = formatHMS(elapsed);
-      } else {
-        countdown.textContent = formatHMS(remaining);
-        pctEl.textContent = `${Math.max(0, 100 - pctDone)}% to go`;
-        tglLabel.textContent = "Remaining";
+        tglLabel.textContent = "Remaining";                  // box → remaining
         tglVal.textContent = formatHMS(remaining);
+      } else {
+        countdown.textContent = formatHMS(remaining);        // circle → remaining
+        pctEl.textContent = `${Math.max(0, 100 - pctDone)}% to go`;
+        tglLabel.textContent = "Fasting";                    // box → elapsed
+        tglVal.textContent = formatHMS(elapsed);
       }
     } else {   // goal reached — extended fast
       setRingDot(0, "", false);   // ring is full; no leading dot
       const over = elapsed - total;
+      // Post-goal the circle counts up the extended fast; the box shows the
+      // opposite (remaining, now zero).
       countdown.textContent = formatHMS(elapsed);
       pctEl.textContent = over > 60000 ? `Goal +${relFast(over)}` : "Goal reached";
-      tglLabel.textContent = timerMode === "elapsed" ? "Fasting" : "Remaining";
-      tglVal.textContent = timerMode === "elapsed" ? formatHMS(elapsed) : "00:00:00";
+      tglLabel.textContent = "Remaining";
+      tglVal.textContent = "00:00:00";
     }
   } else {
     // Actively eating — ring visuals unchanged from the original.
