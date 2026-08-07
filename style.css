@@ -117,6 +117,8 @@ main {
   text-align: center;
 }
 .box-mid { display: flex; align-items: center; justify-content: center; min-height: 0; overflow: hidden; }
+.box-mid-next { flex-direction: column; gap: 2px; }
+.box-in { font-size: 10px; color: var(--muted); font-weight: 600; line-height: 1; }
 .box-val {
   font-family: ui-monospace, "SF Mono", Menlo, monospace;
   font-size: 18px;

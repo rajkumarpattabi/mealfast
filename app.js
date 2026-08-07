@@ -302,6 +302,17 @@ function stageForHours(h) {
   if (h < 48) return { key: "autophagy", name: "Autophagy Rising" };
   return { key: "deep", name: "Deep Autophagy" };
 }
+
+// The next fasting stage and how long until it begins, given elapsed ms.
+// Returns null once you're in the deepest stage (nothing further to count to).
+const STAGE_BOUNDS_H = [4, 12, 18, 24, 48];
+function nextStageInfo(elapsedMs) {
+  const h = elapsedMs / 3600000;
+  for (const bh of STAGE_BOUNDS_H) {
+    if (h < bh) return { name: stageForHours(bh).name, ms: bh * 3600000 - elapsedMs };
+  }
+  return null;
+}
 let currentArtKey = "__init", artFadeTimer = null;
 function setStageArt(key) {
   const el = document.getElementById("stageArt");
@@ -429,8 +440,16 @@ function renderTimer() {
   const countdown = document.getElementById("countdownText");
   const pctEl = document.getElementById("timerPct");
   const tglLabel = document.getElementById("tglLabel");
+  const tglIn = document.getElementById("tglIn");
   const tglVal = document.getElementById("tglVal");
   const noSchedule = document.getElementById("noScheduleNote");
+
+  // Box (b): countdown to the next fasting stage (set per phase below).
+  const setNextBox = (label, showIn, val) => {
+    tglLabel.textContent = label;
+    tglIn.style.display = showIn ? "" : "none";
+    tglVal.textContent = val;
+  };
 
   // Box (c) — weekly/monthly consistency — updates in every phase.
   renderPeriodBox(now);
@@ -445,8 +464,7 @@ function renderTimer() {
     ring.style.strokeDashoffset = RING_CIRC;
     setRingDot(0, "", false);
     setStageBox("Ready", null);
-    tglLabel.textContent = timerMode === "elapsed" ? "Fasting" : "Remaining";
-    tglVal.textContent = "--:--:--";
+    setNextBox("Next phase", false, "--:--:--");
     lastPhase = null;
     updateStreakBadge(now);
     return;
@@ -467,31 +485,27 @@ function renderTimer() {
 
     setStageBox(stage.name, stage.key);
 
+    // Box (b): countdown to the NEXT fasting stage (same in fasting + extended).
+    const nx = nextStageInfo(elapsed);
+    if (nx) setNextBox(nx.name, true, formatHMS(nx.ms));
+    else    setNextBox(stage.name, false, "deepest");   // already in the final stage
+
+    // Circle: tap the ring to flip between Remaining and Elapsed emphasis.
+    const pctDone = Math.min(100, Math.round(frac * 100));
     if (state.phase === "fasting") {
       setRingDot(frac, col, true);
-      const pctDone = Math.min(100, Math.round(frac * 100));
-      // Circle and box (b) always show OPPOSITE views, so both numbers are visible
-      // at once; tapping either swaps them together.
       if (timerMode === "elapsed") {
-        countdown.textContent = formatHMS(elapsed);          // circle → elapsed
+        countdown.textContent = formatHMS(elapsed);
         pctEl.textContent = `${pctDone}% of goal`;
-        tglLabel.textContent = "Remaining";                  // box → remaining
-        tglVal.textContent = formatHMS(remaining);
       } else {
-        countdown.textContent = formatHMS(remaining);        // circle → remaining
+        countdown.textContent = formatHMS(remaining);
         pctEl.textContent = `${Math.max(0, 100 - pctDone)}% to go`;
-        tglLabel.textContent = "Fasting";                    // box → elapsed
-        tglVal.textContent = formatHMS(elapsed);
       }
-    } else {   // goal reached — extended fast
+    } else {   // goal reached — extended fast (circle counts up)
       setRingDot(0, "", false);   // ring is full; no leading dot
       const over = elapsed - total;
-      // Post-goal the circle counts up the extended fast; the box shows the
-      // opposite (remaining, now zero).
       countdown.textContent = formatHMS(elapsed);
       pctEl.textContent = over > 60000 ? `Goal +${relFast(over)}` : "Goal reached";
-      tglLabel.textContent = "Remaining";
-      tglVal.textContent = "00:00:00";
     }
   } else {
     // Actively eating — ring visuals unchanged from the original.
@@ -501,8 +515,7 @@ function renderTimer() {
     countdown.textContent = formatHMS(now - state.eatingSince);
     pctEl.textContent = "Eating window";
     setStageBox("Eating", null);
-    tglLabel.textContent = "Eating";
-    tglVal.textContent = formatHMS(now - state.eatingSince);
+    setNextBox("Next phase", false, "—");
   }
 
   if (lastPhase === "fasting" && state.phase === "goal") notifyGoalReached();
@@ -547,7 +560,6 @@ function flipTimerMode() {
   renderTimer();
 }
 document.getElementById("ringWrap").addEventListener("click", flipTimerMode);
-document.getElementById("toggleBox").addEventListener("click", flipTimerMode);
 
 // Tap the third box to switch between weekly and monthly consistency.
 document.getElementById("periodBox").addEventListener("click", () => {
