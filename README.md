@@ -80,3 +80,6 @@ If you want to tweak anything (colors, add a feature), edit the files and
 re-upload them to the same GitHub repo — the installed icon on your phone
 will pick up changes next time you open it (may take one extra reopen for
 the offline cache to refresh).
+
+## Set the User Name
+Raj

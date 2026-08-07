@@ -373,7 +373,11 @@ function setStageBox(name, key) {
   if (nameEl) nameEl.textContent = name;
   if (iconEl && key !== currentBoxArt) {
     currentBoxArt = key;
-    iconEl.innerHTML = key ? (STAGE_ART[key] || "") : "";
+    let svg = key ? (STAGE_ART[key] || "") : "";
+    // Reframe the 0..100 art onto a tighter, vertically-centred viewBox so the
+    // stage art fills the square without its bottom being clipped.
+    if (svg) svg = svg.replace('viewBox="0 0 100 100"', 'viewBox="24 45 58 52"');
+    iconEl.innerHTML = svg;
   }
 }
 
