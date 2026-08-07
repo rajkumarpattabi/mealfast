@@ -117,8 +117,12 @@ main {
   text-align: center;
 }
 .box-mid { display: flex; align-items: center; justify-content: center; min-height: 0; overflow: hidden; }
-.box-mid-next { flex-direction: column; gap: 2px; }
 .box-in { font-size: 10px; color: var(--muted); font-weight: 600; line-height: 1; }
+/* Next-phase box: phase name stays at top, countdown in its lower-centre spot, and
+   the three equal auto-margin gaps place "in" exactly midway between name and time. */
+#toggleBox { display: flex; flex-direction: column; align-items: center; }
+#toggleBox .box-in { margin-top: auto; }
+#toggleBox .box-val-next { margin-top: auto; margin-bottom: auto; text-align: center; }
 .box-val {
   font-family: ui-monospace, "SF Mono", Menlo, monospace;
   font-size: 18px;
