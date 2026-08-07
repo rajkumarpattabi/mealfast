@@ -715,16 +715,17 @@ canvas { width: 100%; height: 210px; display: block; }
 .insight-body .wt-bad { color: var(--chili); }
 
 /* ---- Consistency heatmap ---- */
-.heatmap { display: flex; flex-direction: column; align-items: center; }
-/* left day-label column is 20px wide; month row is offset to sit over the grid */
-.heat-months { display: flex; padding-left: 20px; align-self: center; }
-.heat-mon { width: 14px; margin-right: 3px; font-size: 8px; line-height: 1; color: var(--muted); white-space: nowrap; overflow: visible; }
+/* Cell size (--hc), gap (--hg) and day-label column width (--hdc) are set per
+   Trends range (Week/Month/Year) in renderHeatmap. */
+.heatmap { display: flex; flex-direction: column; align-items: center; --hc: 14px; --hg: 3px; --hdc: 20px; }
+.heat-months { display: flex; padding-left: var(--hdc); align-self: center; }
+.heat-mon { width: var(--hc); margin-right: var(--hg); font-size: 8px; line-height: 1; color: var(--muted); white-space: nowrap; overflow: visible; }
 .heat-body { display: flex; }
-.heat-days { display: flex; flex-direction: column; gap: 3px; width: 20px; }
-.heat-dow { height: 14px; display: flex; align-items: center; font-size: 8px; line-height: 1; color: var(--muted); }
-.heat-grid { display: flex; gap: 3px; }
-.heat-col { display: flex; flex-direction: column; gap: 3px; }
-.heat-cell { width: 14px; height: 14px; border-radius: 3px; }
+.heat-days { display: flex; flex-direction: column; gap: var(--hg); width: var(--hdc); }
+.heat-dow { height: var(--hc); display: flex; align-items: center; font-size: 8px; line-height: 1; color: var(--muted); }
+.heat-grid { display: flex; gap: var(--hg); }
+.heat-col { display: flex; flex-direction: column; gap: var(--hg); }
+.heat-cell { width: var(--hc); height: var(--hc); border-radius: 3px; }
 .heat-green { background: hsl(120, 55%, 42%); }
 .heat-red { background: hsl(0, 60%, 48%); }
 .heat-none { background: var(--ink-3); }

@@ -1269,6 +1269,7 @@ function setTrendRange(r) {
   document.querySelectorAll("#trendRange .seg-btn").forEach(b => b.classList.toggle("active", b.dataset.range === r));
   drawWeightChart();
   drawFastChart();
+  renderHeatmap();
 }
 document.getElementById("trendRange").addEventListener("click", (e) => {
   const b = e.target.closest(".seg-btn");
@@ -1403,10 +1404,27 @@ function renderInsight() {
 function renderHeatmap() {
   const host = document.getElementById("heatmap");
   if (!host) return;
-  const WEEKS = 14;
   const now = new Date();
   const eats = eatsAscending();
   const nowMs = now.getTime();
+
+  // Span follows the Trends range: Week → 4 weeks, Month → 13 weeks, Year → 52.
+  const WEEKS = trendRange === "week" ? 4 : trendRange === "year" ? 52 : 13;
+  const gap = WEEKS > 30 ? 2 : 3;
+  const showDow = trendRange !== "year";        // day labels only when cells are big enough
+  const dayColW = showDow ? 20 : 0;
+  const avail = (host.clientWidth || 320);
+  let cell = Math.floor((avail - dayColW - gap * (WEEKS - 1)) / WEEKS);
+  cell = Math.max(4, Math.min(cell, 28));       // clamp so Week isn't huge / Year isn't 0
+  host.style.setProperty("--hc", cell + "px");
+  host.style.setProperty("--hg", gap + "px");
+  host.style.setProperty("--hdc", dayColW + "px");
+
+  const cap = document.getElementById("heatCaption");
+  if (cap) {
+    const span = trendRange === "week" ? "4 weeks" : trendRange === "year" ? "52 weeks" : "13 weeks";
+    cap.textContent = `Each square is one day over the last ${span} (columns = weeks, rows = Sun–Sat).`;
+  }
 
   // start = Sunday of (WEEKS-1) weeks ago
   const start = new Date(now); start.setHours(0, 0, 0, 0);
@@ -1422,10 +1440,10 @@ function renderHeatmap() {
     prevMonth = m;
   }
 
-  // Day-of-week labels down the left (rows are Sun→Sat).
+  // Day-of-week labels down the left (rows are Sun→Sat) — omitted for Year (too small).
   const DOW = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
   let daysHtml = "";
-  for (let d = 0; d < 7; d++) daysHtml += `<span class="heat-dow">${DOW[d]}</span>`;
+  if (showDow) for (let d = 0; d < 7; d++) daysHtml += `<span class="heat-dow">${DOW[d]}</span>`;
 
   // The grid: one column per week, one cell per day.
   let gridHtml = "";
@@ -1447,7 +1465,7 @@ function renderHeatmap() {
 
   host.innerHTML =
     `<div class="heat-months">${monthsHtml}</div>` +
-    `<div class="heat-body"><div class="heat-days">${daysHtml}</div>` +
+    `<div class="heat-body">${showDow ? `<div class="heat-days">${daysHtml}</div>` : ""}` +
     `<div class="heat-grid">${gridHtml}</div></div>`;
 }
 
