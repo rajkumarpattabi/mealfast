@@ -1,9 +1,10 @@
-const CACHE_NAME = "mealfast-v39";
+const CACHE_NAME = "mealfast-v40";
 const ASSETS = [
   "./",
   "./index.html",
   "./style.css",
   "./app.js",
+  "./README.md",
   "./manifest.json",
   "./icons/apple-touch-icon.png",
   "./icons/icon-192.png",
@@ -36,7 +37,7 @@ self.addEventListener("fetch", (event) => {
   const url = new URL(req.url);
   const isShell =
     req.mode === "navigate" ||
-    (url.origin === self.location.origin && /\.(?:html|css|js|json)$/.test(url.pathname));
+    (url.origin === self.location.origin && /\.(?:html|css|js|json|md)$/.test(url.pathname));
 
   if (isShell) {
     event.respondWith(

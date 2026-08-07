@@ -216,7 +216,10 @@ function streakStats(now) {
 }
 
 /* ---------- Timer tab rendering ---------- */
-const USER_NAME = "Raj";   // shown in the greeting — change to taste
+// Shown in the greeting. Read from README.md ("## Set the User Name") so anyone
+// cloning the repo can personalise it by editing the README — no code changes.
+// Falls back to the last-known name (cached) or "Raj" while offline / on first load.
+let USER_NAME = localStorage.getItem("mf_username") || "Raj";
 
 function greetingWord(h) {
   if (h < 12) return "Good morning";
@@ -247,6 +250,39 @@ function updateGreeting(now) {
   document.getElementById("greetingLine").innerHTML =
     `${greetingWord(now.getHours())}, <span class="name">${USER_NAME}</span>`;
 }
+
+// Pull the display name from README.md: the first non-empty line under a
+// "## Set the User Name" heading. Returns null if the section isn't found.
+function parseUserName(md) {
+  const lines = md.split(/\r?\n/);
+  for (let i = 0; i < lines.length; i++) {
+    if (/^#{1,6}\s*Set the User Name\s*$/i.test(lines[i].trim())) {
+      let inFence = false;
+      for (let j = i + 1; j < lines.length; j++) {
+        let v = lines[j].trim();
+        if (v.startsWith("```")) { inFence = !inFence; continue; }   // skip fenced blocks
+        if (inFence) continue;
+        if (!v) continue;
+        if (/^#{1,6}\s/.test(v)) return null;      // next heading — no name given
+        v = v.replace(/^[-*>|\s]+/, "").replace(/[`*_]/g, "").trim();
+        if (v) return v;
+      }
+    }
+  }
+  return null;
+}
+
+async function loadUserName() {
+  try {
+    const res = await fetch("README.md", { cache: "no-store" });
+    if (!res.ok) return;
+    const name = parseUserName(await res.text());
+    if (!name) return;
+    localStorage.setItem("mf_username", name);
+    if (name !== USER_NAME) { USER_NAME = name; updateGreeting(new Date()); }
+  } catch (e) { /* offline: keep the cached / default name */ }
+}
+loadUserName();
 
 /* ---- Fasting-stage background art (driven by ELAPSED hours, not goal %) ---- */
 const ART_OPACITY = 0.16;
