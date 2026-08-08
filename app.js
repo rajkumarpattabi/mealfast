@@ -1,7 +1,46 @@
-/* ---------- Storage helpers (all data stays in this browser, on this device) ---------- */
+/* ============================================================================
+ * MealFast — app.js  (all application logic)
+ * ----------------------------------------------------------------------------
+ * MealFast is a single-user intermittent-fasting PWA. Everything runs in the
+ * browser — there is NO server. All data lives in this device's localStorage
+ * (keys listed in STORE_KEYS). The UI is five tabs: Timer, Entries, Logs,
+ * Trends, Targets (see index.html for the matching markup).
+ *
+ * HOW A FAST IS MODELLED ("rolling fast")
+ *   Your fast runs from your LAST logged meal/drink up to the next time you eat.
+ *   Water/Electrolyte don't break a fast. The fasting-STAGE names (Digesting,
+ *   Fat Burning, Ketosis…) are derived purely from elapsed hours since that
+ *   last meal — see stageForHours().
+ *
+ * DATA MODEL (localStorage)
+ *   logs      meals/drinks + eating markers  [{id,type,marker?,note,timestamp}]
+ *   weights   weigh-ins (kg)                  [{id,weightKg,timestamp}]
+ *   waist     waist measurements (cm)         [{id,cm,timestamp}]
+ *   schedule  per-weekday fasting target      [{weekday,targetHours}]
+ *   wtarget   weight goal                     {dir:'off'|'reduce'|'increase', rate}
+ *   small UI prefs: mf_timer_mode, mf_trend_range, mf_measure_mode,
+ *   mf_fast_mode, mf_period_mode, mf_username, mf_gd_* (Google Drive backup).
+ *
+ * FILE MAP (top → bottom)
+ *   1. Storage helpers + app state
+ *   2. Fasting state logic (rolling fast, auto-close eating, auto-cap long fasts)
+ *   3. Streak / per-day fasting evaluation (shared by timer, trends, heatmap)
+ *   4. Timer tab (greeting, ring, current stage, next-stage countdown, streak box)
+ *   5. Tab navigation
+ *   6. Entries tab (log meal/drink, weight, waist) + Logs tab (list/edit/delete)
+ *   7. Chart helpers + Trends tab
+ *        Fasting: Duration bars ↔ Stages breakdown
+ *        Measurement: Weight/Waist line (+ rolling avg + weight target line)
+ *        Weekly insight summary + Consistency heatmap
+ *   8. Targets tab (schedule + weight target) + Backup (file / CSV / Google Drive)
+ * ==========================================================================*/
+
+/* ---------- 1. Storage helpers (all data stays in this browser, on this device) ---------- */
+// localStorage keys for every persisted collection / setting.
 const STORE_KEYS = { logs: "mf_logs", weights: "mf_weights", waist: "mf_waist", schedule: "mf_schedule", wtarget: "mf_wtarget" };
 const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 
+// Read + JSON-parse a stored value; return `fallback` if missing or corrupt.
 function load(key, fallback) {
   try {
     const raw = localStorage.getItem(key);
@@ -10,6 +49,7 @@ function load(key, fallback) {
     return fallback;
   }
 }
+// JSON-stringify + persist a value under `key`.
 function save(key, value) {
   localStorage.setItem(key, JSON.stringify(value));
 }
@@ -22,6 +62,7 @@ function defaultSchedule() {
   }));
 }
 
+// Keep a fasting-target value within the selectable 8–36h range.
 function clampHours(h) {
   if (typeof h !== "number" || isNaN(h)) return 16;
   return Math.min(36, Math.max(8, Math.round(h)));
@@ -51,9 +92,11 @@ save(STORE_KEYS.schedule, schedule);
 // Weight target: { dir: "off"|"reduce"|"increase", rate: kg per week }
 let wtarget = load(STORE_KEYS.wtarget, { dir: "off", rate: 0.5 });
 
+// Short unique id for a new log/weight/waist entry (timestamp + random suffix).
 function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
 
-/* ---------- Fasting state logic ---------- */
+/* ---------- 2. Fasting state logic ---------- */
+// The fasting-target hours configured for the weekday of `date` (Targets tab).
 function targetHoursFor(date) {
   const s = schedule.find(x => x.weekday === date.getDay());
   return s ? s.targetHours : 16;
@@ -141,7 +184,7 @@ function rollingFastState(now) {
   };
 }
 
-/* ---------- Streak / per-day fasting (shared) ----------
+/* ---------- 3. Streak / per-day fasting (shared) ----------
    A day is "on target" if the fast that STARTED that day — measured from your
    last meal of the day to the next time you ate — was at least that day's goal.
    Measuring the real gap between eating events (not a single calendar day) lets
@@ -216,7 +259,7 @@ function streakStats(now) {
   return { current, best };
 }
 
-/* ---------- Timer tab rendering ---------- */
+/* ---------- 4. Timer tab rendering ---------- */
 // Shown in the greeting. Read from README.md ("## Set the User Name") so anyone
 // cloning the repo can personalise it by editing the README — no code changes.
 // Falls back to the last-known name (cached) or "Raj" while offline / on first load.
@@ -585,7 +628,7 @@ if ("Notification" in window && Notification.permission === "default") {
   }, { once: true });
 }
 
-/* ---------- Tab navigation ---------- */
+/* ---------- 5. Tab navigation ---------- */
 document.querySelectorAll(".tab-btn").forEach(btn => {
   btn.addEventListener("click", () => {
     document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
@@ -599,7 +642,7 @@ document.querySelectorAll(".tab-btn").forEach(btn => {
   });
 });
 
-/* ---------- Entries tab: log a meal / drink ---------- */
+/* ---------- 6. Entries tab: log a meal / drink ---------- */
 
 function toDateInput(d) {
   const p = n => String(n).padStart(2, "0");
@@ -1044,7 +1087,7 @@ document.getElementById("editSheet").addEventListener("click", (e) => {
   if (e.target.id === "editSheet") closeEditSheet();   // tap the dimmed backdrop to dismiss
 });
 
-/* ---- chart helpers ---- */
+/* ---------- 7. Trends tab — chart helpers ---------- */
 const AXIS = "#3A4757", GRID = "#2C3846", TICK = "#8B96A3";
 
 function fmtDate(d) {
@@ -1516,7 +1559,7 @@ document.getElementById("fastToggle").addEventListener("click", (e) => {
 });
 document.querySelectorAll("#fastToggle .seg-btn").forEach(b => b.classList.toggle("active", b.dataset.fmode === fastMode));
 
-/* ---------- Schedule tab ---------- */
+/* ---------- 8. Targets tab — per-weekday fasting schedule ---------- */
 const DAY_NAMES = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
 // Sun→Sat: an even hue sweep, one matched saturation/lightness per day, so the
 // grid reads as one cohesive system rather than seven clashing colours.

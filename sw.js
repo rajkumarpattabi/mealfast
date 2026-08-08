@@ -1,3 +1,15 @@
+/* ============================================================================
+ * MealFast — sw.js (service worker: offline support + update strategy)
+ * ----------------------------------------------------------------------------
+ * Registered by app.js. Precaches the app shell so MealFast opens with no
+ * network, and controls how updates reach the device:
+ *   • App shell (html/css/js/json/md): NETWORK-FIRST — fetch the latest when
+ *     online, fall back to cache when offline. This is why a fresh deploy shows
+ *     up on next open once you're online.
+ *   • Everything else (icons): CACHE-FIRST — rarely changes.
+ * Bump CACHE_NAME on every deploy: the new worker installs the new cache and
+ * the activate handler deletes the old one. (This is the "vNN" you increment.)
+ * ==========================================================================*/
 const CACHE_NAME = "mealfast-v54";
 const ASSETS = [
   "./",

@@ -1,13 +1,24 @@
+/* ============================================================================
+ * MealFast — style.css
+ * ----------------------------------------------------------------------------
+ * All styling for the app. Dark, warm palette defined once as CSS variables in
+ * :root below, then reused everywhere via var(--…). Layout is mobile-first
+ * (designed for an iPhone-width standalone PWA). Sections further down are
+ * grouped by tab / component and marked with dashed "---- name ----" divider
+ * comments (Timer ring, tab bar, Logs, charts, heatmap, stage bars, etc.).
+ * ==========================================================================*/
+
+/* Design tokens — the whole colour system. Change these to re-theme the app. */
 :root {
-  --ink: #1B2430;
-  --ink-2: #232E3D;
-  --ink-3: #2C3846;
-  --cream: #F2EDE4;
-  --muted: #8B96A3;
-  --turmeric: #D9A441;
-  --chili: #C1683F;
-  --leaf: #6E9B72;
-  --radius: 14px;
+  --ink: #1B2430;        /* app background (darkest) */
+  --ink-2: #232E3D;      /* cards / raised surfaces */
+  --ink-3: #2C3846;      /* inputs, tracks, chips */
+  --cream: #F2EDE4;      /* primary text */
+  --muted: #8B96A3;      /* secondary / label text */
+  --turmeric: #D9A441;   /* primary accent (buttons, active state) */
+  --chili: #C1683F;      /* warning / "off-target" red */
+  --leaf: #6E9B72;       /* success / target green */
+  --radius: 14px;        /* standard corner radius */
 }
 
 * { box-sizing: border-box; }

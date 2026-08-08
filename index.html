@@ -1,4 +1,19 @@
 <!DOCTYPE html>
+<!--
+  MealFast — index.html (app shell / markup)
+  ------------------------------------------------------------------------
+  Structure: a fixed top bar, a <main> holding five <section class="tab">
+  screens (only one is .active at a time), and a bottom <nav class="tabbar">
+  whose buttons switch tabs. The tabs are:
+    #tab-timer     Timer    — the fasting ring, current stage + next-stage box
+    #tab-entries   Entries  — log a meal/drink, a weight (kg), or a waist (cm)
+    #tab-logs      Logs     — all entries grouped into Today / This Week / Older
+    #tab-trends    Trends   — Fasting, Measurement (weight/waist) & Consistency
+    #tab-schedule  Targets  — per-day fasting hours, weight goal, and backups
+  Styling is in style.css; all behaviour is wired up in app.js (loaded at the
+  very bottom). The meta tags + manifest make this installable to the iOS home
+  screen as a standalone PWA. Element ids here are the hooks app.js reads.
+-->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
