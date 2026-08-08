@@ -1621,7 +1621,7 @@ function renderInsight() {
   let wtxt = "";
   if (wkW.length >= 2) {
     const delta = Number(wkW[wkW.length - 1].weightKg) - Number(wkW[0].weightKg);
-    const val = `${delta >= 0 ? "+" : "−"}${Math.abs(delta).toFixed(1)} kg`;
+    const val = `${delta >= 0 ? "+" : "−"}${Math.abs(delta).toFixed(1)}kg`;
     // Colour vs. goal: green = met/exceeded weekly rate, red = wrong direction, else neutral.
     let cls = "";
     if (wtarget.dir === "reduce") {
@@ -1632,7 +1632,7 @@ function renderInsight() {
       else if (delta >= wtarget.rate - 0.001) cls = "wt-good";  // met/exceeded weekly gain
     }
     const span = cls ? `<span class="${cls}">${val}</span>` : val;
-    wtxt = ` <span class="insight-sep">;</span> Weight ${span}`;
+    wtxt = ` <span class="insight-sep">·</span> ${span}`;
   }
 
   // waist change this week (highest per day: last vs first) — a loss is always "good".
@@ -1640,15 +1640,15 @@ function renderInsight() {
   let xtxt = "";
   if (wkX.length >= 2) {
     const delta = Number(wkX[wkX.length - 1].cm) - Number(wkX[0].cm);
-    const val = `${delta >= 0 ? "+" : "−"}${Math.abs(delta).toFixed(1)} cm`;
+    const val = `${delta >= 0 ? "+" : "−"}${Math.abs(delta).toFixed(1)}cm`;
     const cls = delta < -0.05 ? "wt-good" : (delta > 0.05 ? "wt-bad" : "");
     const span = cls ? `<span class="${cls}">${val}</span>` : val;
-    xtxt = ` <span class="insight-sep">;</span> Waist ${span}`;
+    xtxt = ` <span class="insight-sep">·</span> ${span}`;
   }
 
-  const avgTxt = n ? `avg fast ${(sum / n).toFixed(1)}h` : "no fasts yet";
-  const adhTxt = total ? ` · ${hit}/${total} on target` : "";
-  el.innerHTML = `<div class="insight-title">This week</div><div class="insight-body">${avgTxt}${adhTxt}${wtxt}${xtxt}</div>`;
+  const avgTxt = n ? `${(sum / n).toFixed(1)}h` : "—";
+  const adhTxt = total ? ` · ${hit}/${total}` : "";
+  el.innerHTML = `<span class="insight-lead">Wk</span> ${avgTxt}${adhTxt}${wtxt}${xtxt}`;
 }
 
 /* ---------- Consistency heatmap (Trends tab) ---------- */

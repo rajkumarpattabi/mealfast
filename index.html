@@ -128,18 +128,22 @@
 
   <!-- TRENDS -->
   <section id="tab-trends" class="tab">
-    <div id="insightCard" class="card insight-card" hidden></div>
-
-    <div class="seg" id="trendRange">
-      <button class="seg-btn active" data-range="week">Week</button>
-      <button class="seg-btn" data-range="month">Month</button>
-      <button class="seg-btn" data-range="year">Year</button>
+    <div class="trends-top">
+      <div id="insightCard" class="insight-inline" hidden></div>
+      <div class="seg range-seg" id="trendRange">
+        <button class="seg-btn active" data-range="week" title="Week">W</button>
+        <button class="seg-btn" data-range="month" title="Month">M</button>
+        <button class="seg-btn" data-range="year" title="Year">Y</button>
+      </div>
     </div>
 
     <div class="card">
-      <div class="seg meas-seg" id="fastToggle">
-        <button class="seg-btn active" data-fmode="duration">Duration</button>
-        <button class="seg-btn" data-fmode="stages">Stages</button>
+      <div class="card-head">
+        <span class="card-title">Fasting</span>
+        <div class="seg meas-seg" id="fastToggle">
+          <button class="seg-btn active" data-fmode="duration">Duration</button>
+          <button class="seg-btn" data-fmode="stages">Stages</button>
+        </div>
       </div>
       <canvas id="fastChart" width="320" height="210"></canvas>
       <div id="fastEmpty" class="empty-note">Log a few meals to see this trend.</div>
@@ -147,9 +151,12 @@
     </div>
 
     <div class="card">
-      <div class="seg meas-seg" id="measToggle">
-        <button class="seg-btn active" data-meas="weight">Weight</button>
-        <button class="seg-btn" data-meas="waist">Waist</button>
+      <div class="card-head">
+        <span class="card-title">Measurement</span>
+        <div class="seg meas-seg" id="measToggle">
+          <button class="seg-btn active" data-meas="weight">Weight</button>
+          <button class="seg-btn" data-meas="waist">Waist</button>
+        </div>
       </div>
       <canvas id="weightChart" width="320" height="210"></canvas>
       <div id="weightEmpty" class="empty-note">No weight entries in this range.</div>
