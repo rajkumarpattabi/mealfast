@@ -765,6 +765,25 @@ canvas { width: 100%; height: 210px; display: block; }
 .meas-seg { margin: 0 auto 12px; max-width: 220px; }
 .meas-seg .seg-btn { font-size: 12px; padding: 6px 0; }
 
+/* ---- Time-in-stage breakdown (Stages toggle on the fasting card) ---- */
+.stage-breakdown { padding: 4px 0 2px; }
+.stage-caption { text-align: center; font-size: 12px; color: var(--muted); font-weight: 600; margin-bottom: 12px; }
+.stage-bar { display: flex; width: 100%; height: 40px; border-radius: 9px; overflow: hidden; background: var(--ink-3); }
+.stage-seg { display: flex; align-items: center; justify-content: center; min-width: 0; overflow: hidden; }
+.stage-seg span { font-size: 11px; font-weight: 700; color: #12181f; white-space: nowrap; padding: 0 4px; }
+.st-warm { background: #566172; }   /* muted — the expected majority */
+.st-fat  { background: #D9A441; }
+.st-keto { background: #6E9B72; }
+.st-auto { background: #8A79C9; }
+.st-warm span { color: var(--cream); }   /* light label on the muted band */
+.stage-legend { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px 14px; margin-top: 14px; font-size: 11.5px; color: var(--muted); font-weight: 600; }
+.st-leg { display: inline-flex; align-items: center; gap: 5px; }
+.st-sw { width: 11px; height: 11px; border-radius: 3px; display: inline-block; }
+.st-sw.st-warm { background: #566172; }
+.st-sw.st-fat  { background: #D9A441; }
+.st-sw.st-keto { background: #6E9B72; }
+.st-sw.st-auto { background: #8A79C9; }
+
 /* ---- Schedule tab ---- */
 #scheduleList {
   display: grid;

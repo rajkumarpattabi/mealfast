@@ -137,9 +137,13 @@
     </div>
 
     <div class="card">
-      <h3 class="section-title" style="margin-top:0">Fasting</h3>
+      <div class="seg meas-seg" id="fastToggle">
+        <button class="seg-btn active" data-fmode="duration">Duration</button>
+        <button class="seg-btn" data-fmode="stages">Stages</button>
+      </div>
       <canvas id="fastChart" width="320" height="210"></canvas>
       <div id="fastEmpty" class="empty-note">Log a few meals to see this trend.</div>
+      <div id="stageBreakdown" class="stage-breakdown" hidden></div>
     </div>
 
     <div class="card">

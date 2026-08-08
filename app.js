@@ -592,7 +592,7 @@ document.querySelectorAll(".tab-btn").forEach(btn => {
     document.querySelectorAll(".tab").forEach(s => s.classList.remove("active"));
     btn.classList.add("active");
     document.getElementById("tab-" + btn.dataset.tab).classList.add("active");
-    if (btn.dataset.tab === "trends") { renderInsight(); drawWeightChart(); drawFastChart(); renderHeatmap(); }
+    if (btn.dataset.tab === "trends") { renderInsight(); drawWeightChart(); renderFastCard(); renderHeatmap(); }
     if (btn.dataset.tab === "schedule") { renderSchedule(); renderWeightTarget(); renderBackupStatus(); }
     if (btn.dataset.tab === "logs") { renderLogs(); }
     if (btn.dataset.tab === "entries") { populateWeightSelect(); populateWaistSelect(); }
@@ -759,7 +759,7 @@ function afterEntryChange() {
   renderLogs();
   renderTimer();       // fasting phase + streak recompute from the changed data
   drawWeightChart();   // trends stay in sync (guarded no-op when Trends is hidden)
-  drawFastChart();
+  renderFastCard();
 }
 function escapeHtml(s) {
   return s.replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -1125,6 +1125,7 @@ function drawAxes(ctx, W, H, scale, labels, yUnit, mode) {
 /* ---- Trends range + bucketing (Week / Month / Year) ---- */
 let trendRange = localStorage.getItem("mf_trend_range") || "week";
 let measureMode = localStorage.getItem("mf_measure_mode") === "waist" ? "waist" : "weight";  // weight | waist toggle on the trend card
+let fastMode = localStorage.getItem("mf_fast_mode") === "stages" ? "stages" : "duration";     // duration | stages toggle on the fasting card
 
 // Ordered oldest→newest buckets for the selected range.
 function trendBuckets(range, now) {
@@ -1388,12 +1389,96 @@ function monthAdherence(bucket, eats, nowMs) {
   return tot ? { value: (hit / tot) * 100, rate: hit / tot, hit, tot } : null;
 }
 
+/* ---- Time-in-stage breakdown (Stages toggle on the fasting card) ---- */
+// Four grouped bands by elapsed-fast hours. Eating-window time falls here too:
+// every gap between consecutive meals restarts at 0h (Warming up), so short
+// between-meal gaps pile into Warming up and only long fasts reach the deep bands.
+const STAGE_BANDS = [
+  { key: "warm", lo: 0,  hi: 12,       name: "Warming up",  cls: "st-warm" },
+  { key: "fat",  lo: 12, hi: 18,       name: "Fat-burning", cls: "st-fat" },
+  { key: "keto", lo: 18, hi: 24,       name: "Ketosis",     cls: "st-keto" },
+  { key: "auto", lo: 24, hi: Infinity, name: "Autophagy",   cls: "st-auto" }
+];
+const STAGE_GAP_CAP_H = 40;   // ignore stage time past 40h in one gap (likely a missed log)
+
+function stageBandsForRange(range, now) {
+  const nowMs = now.getTime();
+  const windowDays = range === "week" ? 7 : range === "month" ? 30 : 365;
+  const windowStart = nowMs - windowDays * 86400000;
+  const eats = eatsAscending().filter(t => t <= nowMs);
+  const bands = { warm: 0, fat: 0, keto: 0, auto: 0 };
+  let total = 0;
+
+  // Add the stage split of one gap [t0, t1], clipped to the window and capped.
+  const addGap = (t0, t1) => {
+    const s = Math.max(t0, windowStart), e = Math.min(t1, nowMs);
+    if (e <= s) return;
+    const startH = (s - t0) / 3600000;
+    const endH = Math.min((e - t0) / 3600000, STAGE_GAP_CAP_H);
+    if (endH <= startH) return;
+    for (const b of STAGE_BANDS) {
+      const a = Math.max(startH, b.lo), z = Math.min(endH, b.hi);
+      if (z > a) { bands[b.key] += (z - a); total += (z - a); }
+    }
+  };
+  for (let i = 0; i < eats.length - 1; i++) addGap(eats[i], eats[i + 1]);
+  if (eats.length) addGap(eats[eats.length - 1], nowMs);   // ongoing fast → now
+  return { bands, total };
+}
+
+// Compact "3h 48m" / "48m" / "12m" duration label.
+function fmtDurH(h) {
+  const mins = Math.round(h * 60);
+  const H = Math.floor(mins / 60), M = mins % 60;
+  if (H === 0) return `${M}m`;
+  return M ? `${H}h ${M}m` : `${H}h`;
+}
+
+function renderStageBreakdown() {
+  const host = document.getElementById("stageBreakdown");
+  if (!host) return;
+  const { bands, total } = stageBandsForRange(trendRange, new Date());
+  if (total <= 0) {
+    host.innerHTML = `<div class="empty-note">Log some meals to see your stage breakdown.</div>`;
+    return;
+  }
+  const rep = k => bands[k] / total * 24;   // hours in a representative 24-hour day
+  const rangeLabel = trendRange === "week" ? "last 7 days" : trendRange === "month" ? "last 30 days" : "last 12 months";
+  let segs = "", leg = "";
+  STAGE_BANDS.forEach(b => {
+    const h = rep(b.key), pct = h / 24 * 100;
+    const label = fmtDurH(h);
+    segs += `<div class="stage-seg ${b.cls}" style="width:${pct}%">${pct >= 15 ? `<span>${label}</span>` : ""}</div>`;
+    leg += `<span class="st-leg"><i class="st-sw ${b.cls}"></i>${b.name} · ${label}</span>`;
+  });
+  host.innerHTML =
+    `<div class="stage-caption">Average day · ${rangeLabel}</div>` +
+    `<div class="stage-bar">${segs}</div>` +
+    `<div class="stage-legend">${leg}</div>`;
+}
+
+// Show the fasting card in whichever mode is active (bars vs stage breakdown).
+function renderFastCard() {
+  const canvas = document.getElementById("fastChart");
+  const emptyD = document.getElementById("fastEmpty");
+  const stagesEl = document.getElementById("stageBreakdown");
+  if (fastMode === "stages") {
+    canvas.style.display = "none";
+    if (emptyD) emptyD.hidden = true;
+    stagesEl.hidden = false;
+    renderStageBreakdown();
+  } else {
+    stagesEl.hidden = true;
+    drawFastChart();   // manages the canvas + its own empty note
+  }
+}
+
 function setTrendRange(r) {
   trendRange = r;
   localStorage.setItem("mf_trend_range", r);
   document.querySelectorAll("#trendRange .seg-btn").forEach(b => b.classList.toggle("active", b.dataset.range === r));
   drawWeightChart();
-  drawFastChart();
+  renderFastCard();
   renderHeatmap();
 }
 document.getElementById("trendRange").addEventListener("click", (e) => {
@@ -1414,6 +1499,19 @@ document.getElementById("measToggle").addEventListener("click", (e) => {
   if (b) setMeasureMode(b.dataset.meas);
 });
 document.querySelectorAll("#measToggle .seg-btn").forEach(b => b.classList.toggle("active", b.dataset.meas === measureMode));
+
+// Duration / Stages toggle on the fasting card.
+function setFastMode(m) {
+  fastMode = m;
+  localStorage.setItem("mf_fast_mode", m);
+  document.querySelectorAll("#fastToggle .seg-btn").forEach(b => b.classList.toggle("active", b.dataset.fmode === m));
+  renderFastCard();
+}
+document.getElementById("fastToggle").addEventListener("click", (e) => {
+  const b = e.target.closest(".seg-btn");
+  if (b) setFastMode(b.dataset.fmode);
+});
+document.querySelectorAll("#fastToggle .seg-btn").forEach(b => b.classList.toggle("active", b.dataset.fmode === fastMode));
 
 /* ---------- Schedule tab ---------- */
 const DAY_NAMES = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
@@ -1688,7 +1786,7 @@ function applyImportedData(data) {
   save(STORE_KEYS.waist, waist);
   save(STORE_KEYS.schedule, schedule);
   renderLogs(); renderSchedule(); populateWeightSelect(); populateWaistSelect(); renderTimer();
-  drawWeightChart(); drawFastChart();
+  drawWeightChart(); renderFastCard();
   return true;
 }
 
