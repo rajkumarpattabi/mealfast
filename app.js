@@ -1444,17 +1444,20 @@ function renderStageBreakdown() {
   }
   const rep = k => bands[k] / total * 24;   // hours in a representative 24-hour day
   const rangeLabel = trendRange === "week" ? "last 7 days" : trendRange === "month" ? "last 30 days" : "last 12 months";
-  let segs = "", leg = "";
+  // One labelled bar per band, stacked to fill the same height as the Duration
+  // chart. Each bar's length is that band's share of a 24-hour day.
+  let rows = "";
   STAGE_BANDS.forEach(b => {
-    const h = rep(b.key), pct = h / 24 * 100;
-    const label = fmtDurH(h);
-    segs += `<div class="stage-seg ${b.cls}" style="width:${pct}%">${pct >= 15 ? `<span>${label}</span>` : ""}</div>`;
-    leg += `<span class="st-leg"><i class="st-sw ${b.cls}"></i>${b.name} · ${label}</span>`;
+    const h = rep(b.key), pct = Math.max(0, Math.min(100, h / 24 * 100));
+    rows += `<div class="stage-row">` +
+      `<div class="stage-row-head"><span class="stage-row-name ${b.cls}-t">${b.name}</span>` +
+      `<span class="stage-row-val">${fmtDurH(h)}</span></div>` +
+      `<div class="stage-track"><div class="stage-fill ${b.cls}" style="width:${pct}%"></div></div>` +
+      `</div>`;
   });
   host.innerHTML =
     `<div class="stage-caption">Average day · ${rangeLabel}</div>` +
-    `<div class="stage-bar">${segs}</div>` +
-    `<div class="stage-legend">${leg}</div>`;
+    `<div class="stage-rows">${rows}</div>`;
 }
 
 // Show the fasting card in whichever mode is active (bars vs stage breakdown).
