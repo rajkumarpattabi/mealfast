@@ -781,6 +781,9 @@ canvas { width: 100%; height: 210px; display: block; }
 /* compact toggle sitting at the top of the trend card (Weight / Waist) */
 .meas-seg { margin: 0 auto 12px; max-width: 220px; }
 .meas-seg .seg-btn { font-size: 12px; padding: 6px 0; }
+/* In a card-head: fixed, roomy width so the two labels aren't cramped */
+.card-head .meas-seg { flex: 0 0 auto; width: 196px; max-width: none; margin: 0 0 0 auto; gap: 4px; }
+.card-head .meas-seg .seg-btn { padding: 8px 6px; font-size: 12.5px; }
 
 /* ---- Time-in-stage breakdown (Stages toggle on the fasting card) ---- */
 /* Fixed 210px matches the Duration canvas so the Weight/Waist card below doesn't
