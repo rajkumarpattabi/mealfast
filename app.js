@@ -1,5 +1,5 @@
 /* ---------- Storage helpers (all data stays in this browser, on this device) ---------- */
-const STORE_KEYS = { logs: "mf_logs", weights: "mf_weights", schedule: "mf_schedule", wtarget: "mf_wtarget" };
+const STORE_KEYS = { logs: "mf_logs", weights: "mf_weights", waist: "mf_waist", schedule: "mf_schedule", wtarget: "mf_wtarget" };
 const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 
 function load(key, fallback) {
@@ -45,6 +45,7 @@ function migrateSchedule(saved) {
 
 let logs = load(STORE_KEYS.logs, []);
 let weights = load(STORE_KEYS.weights, []);
+let waist = load(STORE_KEYS.waist, []);   // [{id, cm, timestamp}] — optional waist measurements
 let schedule = migrateSchedule(load(STORE_KEYS.schedule, defaultSchedule()));
 save(STORE_KEYS.schedule, schedule);
 // Weight target: { dir: "off"|"reduce"|"increase", rate: kg per week }
@@ -594,7 +595,7 @@ document.querySelectorAll(".tab-btn").forEach(btn => {
     if (btn.dataset.tab === "trends") { renderInsight(); drawWeightChart(); drawFastChart(); renderHeatmap(); }
     if (btn.dataset.tab === "schedule") { renderSchedule(); renderWeightTarget(); renderBackupStatus(); }
     if (btn.dataset.tab === "logs") { renderLogs(); }
-    if (btn.dataset.tab === "entries") { populateWeightSelect(); }
+    if (btn.dataset.tab === "entries") { populateWeightSelect(); populateWaistSelect(); }
   });
 });
 
@@ -670,6 +671,11 @@ function renderLogs() {
     kind: "weight", id: w.id, when: new Date(w.timestamp),
     type: "Weight", note: "",
     value: `${Number(w.weightKg).toFixed(1)} kg`
+  }));
+  waist.forEach(x => items.push({
+    kind: "waist", id: x.id, when: new Date(x.timestamp),
+    type: "Waist", note: "",
+    value: `${Number(x.cm).toFixed(1)} cm`
   }));
   items.sort((a,b) => b.when - a.when);
 
@@ -822,6 +828,58 @@ document.getElementById("saveWeightBtn").addEventListener("click", () => {
   showToast("Weight saved");
 });
 
+/* ---------- Waist logging (Entries tab) ---------- */
+const WAIST_MIN = 40, WAIST_MAX = 160;   // cm, 0.5-cm steps
+
+function setWaistPicked(picked) {
+  const f = document.getElementById("waistField");
+  if (f) f.classList.toggle("picked", picked);
+}
+function waistOptionsHtml(selStr) {
+  let out = "";
+  for (let i = 0; i <= (WAIST_MAX - WAIST_MIN) * 2; i++) {
+    const s = (WAIST_MIN + i / 2).toFixed(1);
+    out += `<option value="${s}"${s === selStr ? " selected" : ""}>${s} cm</option>`;
+  }
+  return out;
+}
+function resetWaistDateTime() {
+  const now = new Date();
+  document.getElementById("waistDate").value = toDateInput(now);
+  document.getElementById("waistTime").value = toTimeInput(now);
+}
+function populateWaistSelect() {
+  const sel = document.getElementById("waistSelect");
+  if (!sel) return;
+  const last = waist.length ? waist[waist.length - 1].cm : 85;
+  const def = Math.min(WAIST_MAX, Math.max(WAIST_MIN, Math.round(last * 2) / 2));
+  const defStr = def.toFixed(1);
+  sel.innerHTML = waistOptionsHtml(defStr);
+  sel.value = defStr;
+  setWaistPicked(false);
+  resetWaistDateTime();
+}
+populateWaistSelect();
+document.getElementById("waistSelect").addEventListener("focus", () => setWaistPicked(true));
+document.getElementById("waistSelect").addEventListener("change", () => setWaistPicked(true));
+
+document.getElementById("saveWaistBtn").addEventListener("click", () => {
+  const field = document.getElementById("waistField");
+  if (!field.classList.contains("picked")) { showToast("Tap the field to set your waist"); return; }
+  const val = parseFloat(document.getElementById("waistSelect").value);
+  if (isNaN(val)) return;
+  const dv = document.getElementById("waistDate").value;
+  const tv = document.getElementById("waistTime").value;
+  const when = (dv && tv) ? new Date(`${dv}T${tv}`) : new Date();
+  if (isNaN(when.getTime())) { showToast("Enter a valid date & time"); return; }
+  waist.push({ id: uid(), cm: val, timestamp: when.toISOString() });
+  waist.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+  save(STORE_KEYS.waist, waist);
+  populateWaistSelect();
+  drawWeightChart();
+  showToast("Waist saved");
+});
+
 /* ---------- Edit / delete an entry (tap a row in the Logs tab) ---------- */
 let editingKind = null, editingId = null;
 
@@ -840,6 +898,16 @@ function openEditSheet(kind, id) {
       <select id="editWeight" class="edit-input">${weightOptionsHtml(cur)}</select>
       <label class="edit-label">Date &amp; time</label>
       <input type="datetime-local" id="editTime" class="edit-input" value="${toLocalInputValue(new Date(w.timestamp))}">`;
+  } else if (kind === "waist") {
+    const x = waist.find(v => v.id === id);
+    if (!x) return;
+    title.textContent = "Edit waist";
+    const cur = (Math.round(Number(x.cm) * 2) / 2).toFixed(1);
+    body.innerHTML = `
+      <label class="edit-label">Waist (cm)</label>
+      <select id="editWaist" class="edit-input">${waistOptionsHtml(cur)}</select>
+      <label class="edit-label">Date &amp; time</label>
+      <input type="datetime-local" id="editTime" class="edit-input" value="${toLocalInputValue(new Date(x.timestamp))}">`;
   } else {
     const l = logs.find(x => x.id === id);
     if (!l) return;
@@ -880,6 +948,15 @@ function saveEdit() {
       save(STORE_KEYS.weights, weights);
       populateWeightSelect();
     }
+  } else if (editingKind === "waist") {
+    const x = waist.find(v => v.id === editingId);
+    if (x) {
+      x.cm = parseFloat(document.getElementById("editWaist").value);
+      x.timestamp = ts.toISOString();
+      waist.sort((a,b) => new Date(a.timestamp) - new Date(b.timestamp));
+      save(STORE_KEYS.waist, waist);
+      populateWaistSelect();
+    }
   } else {
     const l = logs.find(x => x.id === editingId);
     if (l) {
@@ -909,6 +986,21 @@ function deleteEdit() {
         weights.sort((a,b) => new Date(a.timestamp) - new Date(b.timestamp));
         save(STORE_KEYS.weights, weights);
         populateWeightSelect();
+        afterEntryChange();
+      };
+    }
+  } else if (editingKind === "waist") {
+    const idx = waist.findIndex(x => x.id === editingId);
+    if (idx >= 0) {
+      const removed = waist[idx];
+      waist.splice(idx, 1);
+      save(STORE_KEYS.waist, waist);
+      populateWaistSelect();
+      restore = () => {
+        waist.push(removed);
+        waist.sort((a,b) => new Date(a.timestamp) - new Date(b.timestamp));
+        save(STORE_KEYS.waist, waist);
+        populateWaistSelect();
         afterEntryChange();
       };
     }
@@ -1032,6 +1124,7 @@ function drawAxes(ctx, W, H, scale, labels, yUnit, mode) {
 
 /* ---- Trends range + bucketing (Week / Month / Year) ---- */
 let trendRange = localStorage.getItem("mf_trend_range") || "week";
+let measureMode = localStorage.getItem("mf_measure_mode") === "waist" ? "waist" : "weight";  // weight | waist toggle on the trend card
 
 // Ordered oldest→newest buckets for the selected range.
 function trendBuckets(range, now) {
@@ -1059,18 +1152,19 @@ function trendBuckets(range, now) {
 // Bucket weight value: collapse each date to its HIGHEST weigh-in, then average
 // those per-date values across the bucket. null if none. (For the Week view each
 // bucket is a single date, so this is simply that day's highest weigh-in.)
-function weightAvgInRange(startMs, endMs) {
+function seriesAvgInRange(arr, key, startMs, endMs) {
   const byDate = {};
-  weights.forEach(w => {
+  arr.forEach(w => {
     const t = new Date(w.timestamp).getTime();
     if (t < startMs || t > endMs) return;
-    const key = new Date(w.timestamp).toDateString();
-    const kg = Number(w.weightKg);
-    if (byDate[key] == null || kg > byDate[key]) byDate[key] = kg;
+    const d = new Date(w.timestamp).toDateString();
+    const v = Number(w[key]);
+    if (byDate[d] == null || v > byDate[d]) byDate[d] = v;   // highest-per-date, then averaged
   });
   const vals = Object.values(byDate);
   return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
 }
+function weightAvgInRange(startMs, endMs) { return seriesAvgInRange(weights, "weightKg", startMs, endMs); }
 
 // Actual fast that STARTED on day `d`: real duration (last meal of the day →
 // next time you ate, or now if still fasting), that day's target, and whether
@@ -1111,21 +1205,27 @@ function fastBucketValue(bucket, isWeek, eats, nowMs) {
 function drawWeightChart() {
   const canvas = document.getElementById("weightChart");
   const empty = document.getElementById("weightEmpty");
+  const isWaist = measureMode === "waist";
   const buckets = trendBuckets(trendRange, new Date());
-  const ys = buckets.map(b => weightAvgInRange(b.start, b.end));
+  const ys = buckets.map(b => isWaist
+    ? seriesAvgInRange(waist, "cm", b.start, b.end)
+    : weightAvgInRange(b.start, b.end));
   const present = ys.filter(v => v != null);
-  if (present.length === 0) { empty.hidden = false; canvas.style.display = "none"; return; }
+  empty.textContent = isWaist ? "No waist entries in this range." : "No weight entries in this range.";
+  if (present.length === 0) { empty.hidden = false; canvas.style.display = "none";
+    document.getElementById("weightLegend").hidden = true;
+    document.getElementById("weightStatus").hidden = true; return; }
   empty.hidden = true; canvas.style.display = "block";
   if (canvas.clientWidth === 0) return;   // Trends tab hidden — will redraw on show
 
-  // Weight target trajectory from the first weigh-in (baseline) at the set rate.
-  const wt = weightTargetLine(buckets);   // { active, targetYs, baseKg, targetToday } | null
+  // Weight target trajectory (weight only — waist has no target line).
+  const wt = isWaist ? null : weightTargetLine(buckets);   // { active, targetYs, baseKg, targetToday } | null
   const scaleVals = present.slice();
   if (wt) buckets.forEach((b, i) => { if (wt.targetYs[i] != null) scaleVals.push(wt.targetYs[i]); });
 
   const scale = niceScale(Math.min(...scaleVals), Math.max(...scaleVals), 4);
   const { ctx, W, H } = prepCanvas(canvas, 210);
-  const a = drawAxes(ctx, W, H, scale, buckets.map(b => b.label), "kg", "line");
+  const a = drawAxes(ctx, W, H, scale, buckets.map(b => b.label), isWaist ? "cm" : "kg", "line");
 
   // Target line (leaf green).
   if (wt) {
@@ -1183,6 +1283,8 @@ function drawWeightChart() {
   const legend = document.getElementById("weightLegend");
   if (legend) {
     legend.hidden = !(showAvg || (wt && wt.active));
+    const solidLabel = document.getElementById("lgSolidLabel");
+    if (solidLabel) solidLabel.textContent = isWaist ? "waist" : "weight";
     const avgItem = legend.querySelector(".lg-item-avg");
     const tgtItem = legend.querySelector(".lg-item-target");
     if (avgItem) avgItem.style.display = showAvg ? "" : "none";
@@ -1300,6 +1402,19 @@ document.getElementById("trendRange").addEventListener("click", (e) => {
 });
 document.querySelectorAll("#trendRange .seg-btn").forEach(b => b.classList.toggle("active", b.dataset.range === trendRange));
 
+// Weight / Waist toggle on the trend card.
+function setMeasureMode(m) {
+  measureMode = m;
+  localStorage.setItem("mf_measure_mode", m);
+  document.querySelectorAll("#measToggle .seg-btn").forEach(b => b.classList.toggle("active", b.dataset.meas === m));
+  drawWeightChart();
+}
+document.getElementById("measToggle").addEventListener("click", (e) => {
+  const b = e.target.closest(".seg-btn");
+  if (b) setMeasureMode(b.dataset.meas);
+});
+document.querySelectorAll("#measToggle .seg-btn").forEach(b => b.classList.toggle("active", b.dataset.meas === measureMode));
+
 /* ---------- Schedule tab ---------- */
 const DAY_NAMES = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
 // Sun→Sat: an even hue sweep, one matched saturation/lightness per day, so the
@@ -1397,7 +1512,7 @@ function renderInsight() {
     const ev = dayFastEval(new Date(d), eats, nowMs);
     if (ev.counted) { total++; if (ev.onTarget) hit++; }
   }
-  if (n === 0 && weights.length === 0) { el.hidden = true; return; }
+  if (n === 0 && weights.length === 0 && waist.length === 0) { el.hidden = true; return; }
   el.hidden = false;
 
   // weight change this week (highest per day: last day with data vs first)
@@ -1418,9 +1533,21 @@ function renderInsight() {
     const span = cls ? `<span class="${cls}">${val}</span>` : val;
     wtxt = ` <span class="insight-sep">;</span> Weight ${span}`;
   }
+
+  // waist change this week (highest per day: last vs first) — a loss is always "good".
+  const wkX = waist.filter(x => new Date(x.timestamp).getTime() >= weekStart.getTime());
+  let xtxt = "";
+  if (wkX.length >= 2) {
+    const delta = Number(wkX[wkX.length - 1].cm) - Number(wkX[0].cm);
+    const val = `${delta >= 0 ? "+" : "−"}${Math.abs(delta).toFixed(1)} cm`;
+    const cls = delta < -0.05 ? "wt-good" : (delta > 0.05 ? "wt-bad" : "");
+    const span = cls ? `<span class="${cls}">${val}</span>` : val;
+    xtxt = ` <span class="insight-sep">;</span> Waist ${span}`;
+  }
+
   const avgTxt = n ? `avg fast ${(sum / n).toFixed(1)}h` : "no fasts yet";
   const adhTxt = total ? ` · ${hit}/${total} on target` : "";
-  el.innerHTML = `<div class="insight-title">This week</div><div class="insight-body">${avgTxt}${adhTxt}${wtxt}</div>`;
+  el.innerHTML = `<div class="insight-title">This week</div><div class="insight-body">${avgTxt}${adhTxt}${wtxt}${xtxt}</div>`;
 }
 
 /* ---------- Consistency heatmap (Trends tab) ---------- */
@@ -1511,7 +1638,7 @@ function triggerDownload(content, mime, filename) {
 }
 
 function exportData() {
-  const payload = { app: "MealFast", version: 1, exportedAt: new Date().toISOString(), logs, weights, schedule };
+  const payload = { app: "MealFast", version: 1, exportedAt: new Date().toISOString(), logs, weights, waist, schedule };
   triggerDownload(JSON.stringify(payload, null, 2), "application/json", `mealfast-backup-${dateStamp()}.json`);
   showToast("JSON backup exported");
 }
@@ -1535,10 +1662,14 @@ function exportCsv() {
   const weightRows = weights.slice()
     .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))
     .map(w => { const d = new Date(w.timestamp); return [csvDate(d), csvTime(d), Number(w.weightKg).toFixed(1)].map(csvCell).join(","); });
+  const waistRows = waist.slice()
+    .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))
+    .map(x => { const d = new Date(x.timestamp); return [csvDate(d), csvTime(d), Number(x.cm).toFixed(1)].map(csvCell).join(","); });
 
   const csv = [
     "Entries", "date,time,type,note", ...entryRows,
-    "", "Weights", "date,time,weight_kg", ...weightRows
+    "", "Weights", "date,time,weight_kg", ...weightRows,
+    "", "Waist", "date,time,waist_cm", ...waistRows
   ].join("\n");
   triggerDownload(csv, "text/csv", `mealfast-${dateStamp()}.csv`);
   showToast("CSV exported");
@@ -1550,11 +1681,13 @@ function applyImportedData(data) {
   if (!ok) { showToast("Not a MealFast backup"); return false; }
   logs = Array.isArray(data.logs) ? data.logs : [];
   weights = Array.isArray(data.weights) ? data.weights : [];
+  waist = Array.isArray(data.waist) ? data.waist : [];
   schedule = migrateSchedule(Array.isArray(data.schedule) ? data.schedule : defaultSchedule());
   save(STORE_KEYS.logs, logs);
   save(STORE_KEYS.weights, weights);
+  save(STORE_KEYS.waist, waist);
   save(STORE_KEYS.schedule, schedule);
-  renderLogs(); renderSchedule(); populateWeightSelect(); renderTimer();
+  renderLogs(); renderSchedule(); populateWeightSelect(); populateWaistSelect(); renderTimer();
   drawWeightChart(); drawFastChart();
   return true;
 }
@@ -1630,7 +1763,7 @@ function gdGetToken(interactive, cb, onFail) {
 }
 
 function gdBackupBody() {
-  return JSON.stringify({ app: "MealFast", version: 1, exportedAt: new Date().toISOString(), logs, weights, schedule });
+  return JSON.stringify({ app: "MealFast", version: 1, exportedAt: new Date().toISOString(), logs, weights, waist, schedule });
 }
 
 function gdPatch(token, id, body, done, fail) {

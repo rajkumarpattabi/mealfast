@@ -104,6 +104,20 @@
         <button id="saveWeightBtn" class="primary-btn small">Save</button>
       </div>
     </div>
+
+    <h3 class="section-title">Waist input</h3>
+    <div class="card">
+      <div id="waistField" class="weight-field weight-field-full">
+        <select id="waistSelect" class="weight-select"></select>
+        <span class="weight-placeholder">Tap to set waist (cm)</span>
+      </div>
+      <div class="exact-wrap" style="margin-top:10px">
+        <input type="date" id="waistDate" class="exact-input">
+        <input type="time" id="waistTime" class="exact-input">
+        <button id="saveWaistBtn" class="primary-btn small">Save</button>
+      </div>
+      <p class="sched-hint" style="margin:8px 0 0">Measure at the midpoint between your lowest rib and hip bone, on a gentle exhale — same spot &amp; time each week.</p>
+    </div>
   </section>
 
   <!-- LOGS -->
@@ -129,11 +143,14 @@
     </div>
 
     <div class="card">
-      <h3 class="section-title" style="margin-top:0">Weight trend</h3>
+      <div class="seg meas-seg" id="measToggle">
+        <button class="seg-btn active" data-meas="weight">Weight</button>
+        <button class="seg-btn" data-meas="waist">Waist</button>
+      </div>
       <canvas id="weightChart" width="320" height="210"></canvas>
       <div id="weightEmpty" class="empty-note">No weight entries in this range.</div>
       <div id="weightLegend" class="chart-legend" hidden>
-        <span class="lg-item"><span class="lg-swatch lg-solid"></span>weight</span>
+        <span class="lg-item"><span class="lg-swatch lg-solid"></span><span id="lgSolidLabel">weight</span></span>
         <span class="lg-item lg-item-avg"><span class="lg-swatch lg-dash"></span>rolling avg</span>
         <span class="lg-item lg-item-target"><span class="lg-swatch lg-target"></span>target</span>
       </div>
