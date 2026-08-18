@@ -412,12 +412,27 @@ const STAGE_BLURB = {
 // Show a notification on the lock/home screen. iOS installed-PWAs require the
 // service worker's showNotification(); new Notification() is unsupported there,
 // so we prefer the SW and only fall back to the constructor on desktop.
+// All notifications sharing a `tag` collapse to ONE: before showing, we also
+// explicitly close any existing notification with the same tag, so (e.g.) every
+// fasting-stage alert uses tag "mealfast-stage" and only the latest ever shows —
+// this is belt-and-suspenders on top of the spec's tag-replacement, since iOS
+// doesn't always coalesce reliably.
 function notify(title, body, tag) {
   if (!("Notification" in window) || Notification.permission !== "granted") return;
-  const opts = { body, tag: tag || "mealfast", renotify: true, icon: "icons/icon-192.png", badge: "icons/icon-192.png" };
+  const t = tag || "mealfast";
+  const opts = { body, tag: t, renotify: true, icon: "icons/icon-192.png", badge: "icons/icon-192.png" };
+  const showVia = (reg) => {
+    if (reg && reg.getNotifications) {
+      reg.getNotifications({ tag: t })
+        .then(list => { list.forEach(n => n.close()); reg.showNotification(title, opts); })
+        .catch(() => reg.showNotification(title, opts));
+    } else if (reg) {
+      reg.showNotification(title, opts);
+    }
+  };
   if ("serviceWorker" in navigator && navigator.serviceWorker) {
     navigator.serviceWorker.ready
-      .then(reg => reg.showNotification(title, opts))
+      .then(showVia)
       .catch(() => { try { new Notification(title, opts); } catch (e) {} });
   } else {
     try { new Notification(title, opts); } catch (e) {}
