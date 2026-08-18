@@ -417,8 +417,17 @@ const STAGE_BLURB = {
 // fasting-stage alert uses tag "mealfast-stage" and only the latest ever shows —
 // this is belt-and-suspenders on top of the spec's tag-replacement, since iOS
 // doesn't always coalesce reliably.
+// App-level on/off for alerts (separate from the browser permission, which can
+// be granted but not revoked from code). Unset defaults to ON when permission is
+// already granted, so users who enabled alerts before this toggle keep them.
+let notifEnabled = (function () {
+  const v = localStorage.getItem("mf_notif_enabled");
+  if (v === null) return ("Notification" in window) && Notification.permission === "granted";
+  return v === "true";
+})();
+
 function notify(title, body, tag) {
-  if (!("Notification" in window) || Notification.permission !== "granted") return;
+  if (!notifEnabled || !("Notification" in window) || Notification.permission !== "granted") return;
   const t = tag || "mealfast";
   const opts = { body, tag: t, renotify: true, icon: "icons/icon-192.png", badge: "icons/icon-192.png" };
   const showVia = (reg) => {
@@ -687,37 +696,56 @@ document.getElementById("periodBox").addEventListener("click", () => {
 setInterval(renderTimer, 1000);
 renderTimer();
 
-/* ---- Notification permission control (Targets tab) ---- */
-// Reflect the current permission state on the "Fasting alerts" button + hint.
+/* ---- Notification on/off slider (Targets tab) ---- */
+// Reflect current state on the toggle + hint.
 function renderNotifStatus() {
-  const btn = document.getElementById("notifBtn");
+  const toggle = document.getElementById("notifToggle");
   const hint = document.getElementById("notifHint");
-  if (!btn || !hint) return;
+  if (!toggle || !hint) return;
   if (!("Notification" in window)) {
-    btn.style.display = "none";
+    toggle.checked = false; toggle.disabled = true;
     hint.textContent = "This device / browser doesn't support web notifications.";
     return;
   }
   const p = Notification.permission;
-  if (p === "granted") {
-    btn.textContent = "Alerts on ✓"; btn.disabled = true;
-    hint.textContent = "You'll get a lock-screen alert as you enter each fasting stage and when you reach your goal — while MealFast is open or briefly in the background. iOS can't alert when the app is fully closed.";
-  } else if (p === "denied") {
-    btn.textContent = "Alerts blocked"; btn.disabled = true;
-    hint.textContent = "Notifications are blocked. On iPhone: Settings → Notifications → MealFast → Allow Notifications (the app must be added to your Home Screen first).";
-  } else {
-    btn.textContent = "Enable alerts"; btn.disabled = false;
-    hint.textContent = "Get a lock-screen alert as you enter each fasting stage and when you hit your goal. Add MealFast to your Home Screen first, then tap Enable.";
+  if (p === "denied") {
+    toggle.checked = false;
+    hint.textContent = "Notifications are blocked for MealFast. On iPhone: Settings → Notifications → MealFast → Allow (add the app to your Home Screen first), then slide this on.";
+  } else if (p === "granted") {
+    toggle.checked = notifEnabled;
+    hint.textContent = notifEnabled
+      ? "On — a lock-screen alert as you enter each fasting stage and when you reach your goal, while MealFast is open or briefly in the background (iOS can't alert when fully closed)."
+      : "Off — slide on to get stage and goal alerts.";
+  } else {   // default (not yet asked)
+    toggle.checked = false;
+    hint.textContent = "Slide on to get a lock-screen alert as you enter each fasting stage and when you reach your goal. Add MealFast to your Home Screen first.";
   }
 }
-const notifBtnEl = document.getElementById("notifBtn");
-if (notifBtnEl) {
-  notifBtnEl.addEventListener("click", async () => {
-    try {
-      const res = await Notification.requestPermission();   // must be a user gesture (this tap)
-      renderNotifStatus();
-      if (res === "granted") notify("Alerts on 🔔", "MealFast will nudge you through each fasting stage and celebrate your goal.", "mealfast-test");
-    } catch (e) {}
+
+const notifToggleEl = document.getElementById("notifToggle");
+if (notifToggleEl) {
+  notifToggleEl.addEventListener("change", async () => {
+    if (notifToggleEl.checked) {
+      // Turning ON — request browser permission if we haven't yet (this tap is the gesture).
+      let p = ("Notification" in window) ? Notification.permission : "denied";
+      if (p === "default") {
+        try { p = await Notification.requestPermission(); } catch (e) { p = Notification.permission; }
+      }
+      if (p === "granted") {
+        notifEnabled = true;
+        localStorage.setItem("mf_notif_enabled", "true");
+        notify("Alerts on 🔔", "MealFast will nudge you through each fasting stage and celebrate your goal.", "mealfast-test");
+      } else {
+        // Permission denied / dismissed — can't enable; snap back to off.
+        notifEnabled = false;
+        localStorage.setItem("mf_notif_enabled", "false");
+      }
+    } else {
+      // Turning OFF — app-level mute (browser permission stays as-is).
+      notifEnabled = false;
+      localStorage.setItem("mf_notif_enabled", "false");
+    }
+    renderNotifStatus();
   });
 }
 renderNotifStatus();

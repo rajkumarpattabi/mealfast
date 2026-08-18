@@ -336,6 +336,18 @@ main {
 }
 
 /* ---- Backup row (Schedule tab) ---- */
+/* iOS-style on/off slider (Fasting alerts toggle) */
+.switch-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.switch-label { font-size: 14px; font-weight: 600; color: var(--cream); }
+.switch { position: relative; display: inline-block; width: 48px; height: 28px; flex: 0 0 auto; }
+.switch input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; z-index: 1; }
+.switch-track { position: absolute; inset: 0; background: var(--ink-3); border-radius: 999px; transition: background .2s ease; }
+.switch-thumb { position: absolute; top: 3px; left: 3px; width: 22px; height: 22px; border-radius: 50%; background: var(--cream); transition: transform .2s ease; }
+.switch input:checked + .switch-track { background: var(--leaf); }
+.switch input:checked + .switch-track .switch-thumb { transform: translateX(20px); }
+.switch input:disabled { cursor: default; }
+.switch input:disabled + .switch-track { opacity: 0.5; }
+
 .backup-row { display: flex; gap: 10px; }
 .backup-row .eat-btn {
   flex: 1;
