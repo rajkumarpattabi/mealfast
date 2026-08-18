@@ -766,7 +766,7 @@ document.querySelectorAll(".tab-btn").forEach(btn => {
     document.querySelectorAll(".tab").forEach(s => s.classList.remove("active"));
     btn.classList.add("active");
     document.getElementById("tab-" + btn.dataset.tab).classList.add("active");
-    if (btn.dataset.tab === "trends") { renderInsight(); drawWeightChart(); renderFastCard(); renderHeatmap(); }
+    if (btn.dataset.tab === "trends") { renderInsight(); renderPersonalBests(); drawWeightChart(); renderFastCard(); renderHeatmap(); }
     if (btn.dataset.tab === "schedule") { renderSchedule(); renderWeightTarget(); renderBackupStatus(); renderNotifStatus(); }
     if (btn.dataset.tab === "logs") { renderLogs(); }
     if (btn.dataset.tab === "entries") { populateWeightSelect(); populateWaistSelect(); }
@@ -934,6 +934,7 @@ function afterEntryChange() {
   renderTimer();       // fasting phase + streak recompute from the changed data
   drawWeightChart();   // trends stay in sync (guarded no-op when Trends is hidden)
   renderFastCard();
+  renderPersonalBests();
 }
 function escapeHtml(s) {
   return s.replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -1823,6 +1824,67 @@ function renderInsight() {
   const avgTxt = n ? `${(sum / n).toFixed(1)}h` : "—";
   const adhTxt = total ? ` · ${hit}/${total}` : "";
   el.innerHTML = `<span class="insight-lead">Wk</span> ${avgTxt}${adhTxt}${wtxt}${xtxt}`;
+}
+
+/* ---------- Personal bests strip (Trends tab) ---------- */
+// Compact hours label: "22h 10m", "48m", or "1d 3h" for very long fasts.
+function briefHours(h) {
+  if (h >= 24) { const d = Math.floor(h / 24), r = Math.round(h % 24); return r ? `${d}d ${r}h` : `${d}d`; }
+  const H = Math.floor(h), M = Math.round((h - H) * 60);
+  if (H === 0) return `${M}m`;
+  return M ? `${H}h ${M}m` : `${H}h`;
+}
+
+// All-time / recent bests from the fasting history.
+function personalBests(now) {
+  const eats = eatsAscending();
+  const nowMs = now.getTime();
+
+  // Longest fast = biggest gap between consecutive eats (completed), plus the
+  // current ongoing fast if one is running (it can be a new best in real time).
+  let longestMs = 0;
+  for (let i = 0; i < eats.length - 1; i++) {
+    const gap = eats[i + 1] - eats[i];
+    if (gap > longestMs) longestMs = gap;
+  }
+  const state = rollingFastState(now);
+  if (state.phase === "fasting" || state.phase === "goal") {
+    longestMs = Math.max(longestMs, nowMs - state.fastStart.getTime());
+  }
+
+  // Average daily fast over the last 30 days (main fast per day).
+  const start = new Date(now); start.setDate(now.getDate() - 29); start.setHours(0, 0, 0, 0);
+  let sum = 0, n = 0;
+  for (let d = new Date(start); d <= now; d.setDate(d.getDate() + 1)) {
+    const r = dayActualFast(new Date(d), eats, nowMs);
+    if (r) { sum += r.hours; n++; }
+  }
+  const st = streakStats(now);   // { current, best } on-target-day streaks
+  return {
+    hasData: eats.length >= 1,
+    longestH: longestMs / 3600000,
+    avg30H: n ? sum / n : 0,
+    current: st.current,
+    best: st.best
+  };
+}
+
+function renderPersonalBests() {
+  const card = document.getElementById("bestsCard");
+  const strip = document.getElementById("bestsStrip");
+  if (!card || !strip) return;
+  const pb = personalBests(new Date());
+  if (!pb.hasData || (pb.longestH <= 0 && pb.best === 0)) { card.hidden = true; return; }
+  card.hidden = false;
+  const tiles = [
+    { v: briefHours(pb.longestH), l: "Longest fast" },
+    { v: pb.avg30H ? briefHours(pb.avg30H) : "—", l: "Avg fast · 30d" },
+    { v: `${pb.current}d`, l: "Current streak" },
+    { v: `${pb.best}d`, l: "Best streak" }
+  ];
+  strip.innerHTML = tiles.map(t =>
+    `<div class="best-tile"><div class="best-val">${t.v}</div><div class="best-lbl">${t.l}</div></div>`
+  ).join("");
 }
 
 /* ---------- Consistency heatmap (Trends tab) ---------- */
