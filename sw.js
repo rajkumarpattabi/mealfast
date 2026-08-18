@@ -10,7 +10,7 @@
  * Bump CACHE_NAME on every deploy: the new worker installs the new cache and
  * the activate handler deletes the old one. (This is the "vNN" you increment.)
  * ==========================================================================*/
-const CACHE_NAME = "mealfast-v54";
+const CACHE_NAME = "mealfast-v55";
 const ASSETS = [
   "./",
   "./index.html",
@@ -64,4 +64,17 @@ self.addEventListener("fetch", (event) => {
   } else {
     event.respondWith(caches.match(req).then((c) => c || fetch(req)));
   }
+});
+
+// Tapping a stage/goal notification: focus the app if it's already open,
+// otherwise open it. (Notifications themselves are shown from app.js via
+// registration.showNotification — the iOS-supported path.)
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  event.waitUntil(
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((list) => {
+      for (const c of list) { if ("focus" in c) return c.focus(); }
+      if (self.clients.openWindow) return self.clients.openWindow("./index.html");
+    })
+  );
 });

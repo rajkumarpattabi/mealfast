@@ -392,6 +392,43 @@ function setRingDot(frac, col, show) {
 const RING_CIRC = 2 * Math.PI * 88;
 document.getElementById("ringProgress").style.strokeDasharray = RING_CIRC;
 
+/* ---- Lock-screen notifications (fasting-stage crossings + goal) ----
+   iOS only runs this JS while the installed PWA is open (foreground, or briefly
+   in the background before iOS suspends it) — there's no server push, so a
+   fully-closed app can't be woken. We therefore fire alerts on LIVE ticks only.
+   Stages are ordered so we notify on forward progress; the deepest already-seen
+   stage per fast is remembered so we never repeat or spam a burst on app open. */
+const STAGE_ORDER = ["digesting", "postabsorptive", "glycogen", "fat", "earlyketosis", "ketosis", "autophagy", "deep"];
+const STAGE_BLURB = {
+  postabsorptive: "Blood sugar is settling as digestion wraps up.",
+  glycogen:       "Running on stored glycogen now.",
+  fat:            "You've flipped into fat-burning. 🔥",
+  earlyketosis:   "Ketones are starting to rise.",
+  ketosis:        "You're in nutritional ketosis. 🥑",
+  autophagy:      "Cellular cleanup (autophagy) is ramping up.",
+  deep:           "Deep autophagy — the deepest fasting stage. 💪"
+};
+
+// Show a notification on the lock/home screen. iOS installed-PWAs require the
+// service worker's showNotification(); new Notification() is unsupported there,
+// so we prefer the SW and only fall back to the constructor on desktop.
+function notify(title, body, tag) {
+  if (!("Notification" in window) || Notification.permission !== "granted") return;
+  const opts = { body, tag: tag || "mealfast", renotify: true, icon: "icons/icon-192.png", badge: "icons/icon-192.png" };
+  if ("serviceWorker" in navigator && navigator.serviceWorker) {
+    navigator.serviceWorker.ready
+      .then(reg => reg.showNotification(title, opts))
+      .catch(() => { try { new Notification(title, opts); } catch (e) {} });
+  } else {
+    try { new Notification(title, opts); } catch (e) {}
+  }
+}
+
+// Per-fast notification bookkeeping (reset when a new fast starts).
+let notifFastId = null;      // identity (fastStart ms) of the fast we're tracking
+let notifStageKey = null;    // deepest stage already announced for this fast
+let notifGoalDone = false;   // goal alert already fired for this fast
+
 let lastPhase = null;
 // While fasting, the ring can emphasise time REMAINING (default) or time ELAPSED.
 // Tapping the ring toggles it; the choice is remembered.
@@ -529,6 +566,19 @@ function renderTimer() {
     const col = fastColor(frac);
     const stage = stageForHours(elapsed / 3600000);
 
+    // Fasting-stage crossing → lock-screen notification. On a NEW fast (or the
+    // first render after opening) we just baseline to the current stage without
+    // notifying; thereafter we alert only when the stage advances on a live tick.
+    const fastId = state.fastStart.getTime();
+    if (fastId !== notifFastId) {
+      notifFastId = fastId; notifStageKey = stage.key; notifGoalDone = false;
+    } else if (stage.key !== notifStageKey) {
+      if (STAGE_ORDER.indexOf(stage.key) > STAGE_ORDER.indexOf(notifStageKey) && STAGE_BLURB[stage.key]) {
+        notify(stage.name, STAGE_BLURB[stage.key], "mealfast-stage");
+      }
+      notifStageKey = stage.key;
+    }
+
     // --- Ring progress & colour: unchanged from the original design ---
     ring.style.stroke = col;
     ring.style.strokeDashoffset = RING_CIRC * (1 - frac);
@@ -568,18 +618,19 @@ function renderTimer() {
     setNextBox("Next phase", false, "—");
   }
 
-  if (lastPhase === "fasting" && state.phase === "goal") notifyGoalReached();
+  // Congratulatory goal alert — fires once, only on the live fasting→goal cross.
+  if (lastPhase === "fasting" && state.phase === "goal" && !notifGoalDone) {
+    notifyGoalReached(state.target);
+    notifGoalDone = true;
+  }
   lastPhase = state.phase;
   updateStreakBadge(now);
 }
 
-function notifyGoalReached() {
-  const title = "Fasting goal reached";
-  const body = "You hit your fasting target — enjoy your meal.";
-  showToast(title);
-  if ("Notification" in window && Notification.permission === "granted") {
-    try { new Notification(title, { body }); } catch (e) {}
-  }
+function notifyGoalReached(targetHours) {
+  showToast("Goal reached 🎉");
+  const name = USER_NAME ? `, ${USER_NAME}` : "";
+  notify("🎉 Fast complete!", `Amazing work${name} — you hit your ${targetHours}h fasting goal. Enjoy your meal!`, "mealfast-goal");
 }
 
 // Timer-tab shortcuts: log an eating marker at the current time.
@@ -621,12 +672,40 @@ document.getElementById("periodBox").addEventListener("click", () => {
 setInterval(renderTimer, 1000);
 renderTimer();
 
-if ("Notification" in window && Notification.permission === "default") {
-  document.addEventListener("click", function requestOnce() {
-    Notification.requestPermission();
-    document.removeEventListener("click", requestOnce);
-  }, { once: true });
+/* ---- Notification permission control (Targets tab) ---- */
+// Reflect the current permission state on the "Fasting alerts" button + hint.
+function renderNotifStatus() {
+  const btn = document.getElementById("notifBtn");
+  const hint = document.getElementById("notifHint");
+  if (!btn || !hint) return;
+  if (!("Notification" in window)) {
+    btn.style.display = "none";
+    hint.textContent = "This device / browser doesn't support web notifications.";
+    return;
+  }
+  const p = Notification.permission;
+  if (p === "granted") {
+    btn.textContent = "Alerts on ✓"; btn.disabled = true;
+    hint.textContent = "You'll get a lock-screen alert as you enter each fasting stage and when you reach your goal — while MealFast is open or briefly in the background. iOS can't alert when the app is fully closed.";
+  } else if (p === "denied") {
+    btn.textContent = "Alerts blocked"; btn.disabled = true;
+    hint.textContent = "Notifications are blocked. On iPhone: Settings → Notifications → MealFast → Allow Notifications (the app must be added to your Home Screen first).";
+  } else {
+    btn.textContent = "Enable alerts"; btn.disabled = false;
+    hint.textContent = "Get a lock-screen alert as you enter each fasting stage and when you hit your goal. Add MealFast to your Home Screen first, then tap Enable.";
+  }
 }
+const notifBtnEl = document.getElementById("notifBtn");
+if (notifBtnEl) {
+  notifBtnEl.addEventListener("click", async () => {
+    try {
+      const res = await Notification.requestPermission();   // must be a user gesture (this tap)
+      renderNotifStatus();
+      if (res === "granted") notify("Alerts on 🔔", "MealFast will nudge you through each fasting stage and celebrate your goal.", "mealfast-test");
+    } catch (e) {}
+  });
+}
+renderNotifStatus();
 
 /* ---------- 5. Tab navigation ---------- */
 document.querySelectorAll(".tab-btn").forEach(btn => {
@@ -636,7 +715,7 @@ document.querySelectorAll(".tab-btn").forEach(btn => {
     btn.classList.add("active");
     document.getElementById("tab-" + btn.dataset.tab).classList.add("active");
     if (btn.dataset.tab === "trends") { renderInsight(); drawWeightChart(); renderFastCard(); renderHeatmap(); }
-    if (btn.dataset.tab === "schedule") { renderSchedule(); renderWeightTarget(); renderBackupStatus(); }
+    if (btn.dataset.tab === "schedule") { renderSchedule(); renderWeightTarget(); renderBackupStatus(); renderNotifStatus(); }
     if (btn.dataset.tab === "logs") { renderLogs(); }
     if (btn.dataset.tab === "entries") { populateWeightSelect(); populateWaistSelect(); }
   });
