@@ -401,6 +401,27 @@ main {
   margin: 20px 0 10px 0;
 }
 
+/* ---- Targets tab: collapsible sections ---- */
+.tsec { border-top: 1px solid var(--ink-2); }
+.tsec:first-child { border-top: none; }
+.tsec-head {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  padding: 15px 2px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  font-family: inherit;
+}
+.tsec-chev { color: var(--muted); font-size: 13px; display: inline-block; transition: transform 0.18s ease; }
+.tsec-head.open .tsec-chev { transform: rotate(90deg); }
+.tsec-title { font-size: 12px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
+.tsec-body { padding-bottom: 6px; }
+
 /* ---- Log tab ---- */
 .type-row, .quick-row {
   display: flex;

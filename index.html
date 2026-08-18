@@ -195,52 +195,74 @@
     </div>
   </section>
 
-  <!-- TARGETS (Fasting + Weight) -->
+  <!-- TARGETS (each section is collapsible; only "Fasting target per day" open by default) -->
   <section id="tab-schedule" class="tab">
-    <h3 class="section-title" style="margin-top:8px">Fasting target per day</h3>
-    <div id="scheduleList"></div>
-    <p class="sched-hint">Your fast rolls from your last logged meal and counts up to this many hours.</p>
 
-    <h3 class="section-title">Weight target</h3>
-    <div class="card">
-      <div class="wtarget-row">
-        <select id="wtDir" class="wtarget-select">
-          <option value="off">Off</option>
-          <option value="reduce">Reduce</option>
-          <option value="increase">Increase</option>
-        </select>
-        <select id="wtRate" class="wtarget-select"></select>
-        <span class="wtarget-unit">kg / week</span>
+    <div class="tsec">
+      <button class="tsec-head open"><span class="tsec-chev">▸</span><span class="tsec-title">Fasting target per day</span></button>
+      <div class="tsec-body">
+        <div id="scheduleList"></div>
+        <p class="sched-hint">Your fast rolls from your last logged meal and counts up to this many hours.</p>
       </div>
-      <p id="wtBase" class="sched-hint"></p>
     </div>
 
-    <h3 class="section-title">Fasting alerts</h3>
-    <div class="card">
-      <label class="switch-row">
-        <span class="switch-label">Stage &amp; goal notifications</span>
-        <span class="switch">
-          <input type="checkbox" id="notifToggle">
-          <span class="switch-track"><span class="switch-thumb"></span></span>
-        </span>
-      </label>
-      <p id="notifHint" class="sched-hint"></p>
+    <div class="tsec">
+      <button class="tsec-head"><span class="tsec-chev">▸</span><span class="tsec-title">Weight target</span></button>
+      <div class="tsec-body" hidden>
+        <div class="card">
+          <div class="wtarget-row">
+            <select id="wtDir" class="wtarget-select">
+              <option value="off">Off</option>
+              <option value="reduce">Reduce</option>
+              <option value="increase">Increase</option>
+            </select>
+            <select id="wtRate" class="wtarget-select"></select>
+            <span class="wtarget-unit">kg / week</span>
+          </div>
+          <p id="wtBase" class="sched-hint"></p>
+        </div>
+      </div>
     </div>
 
-    <h3 class="section-title">Backup — file</h3>
-    <div class="backup-row">
-      <button id="exportBtn" class="eat-btn">Export JSON</button>
-      <button id="exportCsvBtn" class="eat-btn">Export CSV</button>
+    <div class="tsec">
+      <button class="tsec-head"><span class="tsec-chev">▸</span><span class="tsec-title">Fasting alerts</span></button>
+      <div class="tsec-body" hidden>
+        <div class="card">
+          <label class="switch-row">
+            <span class="switch-label">Stage &amp; goal notifications</span>
+            <span class="switch">
+              <input type="checkbox" id="notifToggle">
+              <span class="switch-track"><span class="switch-thumb"></span></span>
+            </span>
+          </label>
+          <p id="notifHint" class="sched-hint"></p>
+        </div>
+      </div>
     </div>
-    <div class="backup-row" style="margin-top:8px">
-      <label class="eat-btn" for="importFile">Import data</label>
-      <input type="file" id="importFile" accept="application/json,.json" hidden>
-    </div>
-    <p class="sched-hint">JSON is the full backup used to restore the app. CSV (entries + weights, oldest-first) is for opening in a spreadsheet. Import restores from a JSON backup.</p>
 
-    <h3 class="section-title">Backup — Google Drive</h3>
-    <div id="gdriveArea" class="gdrive-area"></div>
-    <p class="sched-hint">Once connected, MealFast keeps an off-device copy in your Drive and refreshes it automatically about once a day when you open the app.</p>
+    <div class="tsec">
+      <button class="tsec-head"><span class="tsec-chev">▸</span><span class="tsec-title">Backup — file</span></button>
+      <div class="tsec-body" hidden>
+        <div class="backup-row">
+          <button id="exportBtn" class="eat-btn">Export JSON</button>
+          <button id="exportCsvBtn" class="eat-btn">Export CSV</button>
+        </div>
+        <div class="backup-row" style="margin-top:8px">
+          <label class="eat-btn" for="importFile">Import data</label>
+          <input type="file" id="importFile" accept="application/json,.json" hidden>
+        </div>
+        <p class="sched-hint">JSON is the full backup used to restore the app. CSV (entries + weights, oldest-first) is for opening in a spreadsheet. Import restores from a JSON backup.</p>
+      </div>
+    </div>
+
+    <div class="tsec">
+      <button class="tsec-head"><span class="tsec-chev">▸</span><span class="tsec-title">Backup — Google Drive</span></button>
+      <div class="tsec-body" hidden>
+        <div id="gdriveArea" class="gdrive-area"></div>
+        <p class="sched-hint">Once connected, MealFast keeps an off-device copy in your Drive and refreshes it automatically about once a day when you open the app.</p>
+      </div>
+    </div>
+
   </section>
 
 </main>

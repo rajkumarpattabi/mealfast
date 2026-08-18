@@ -750,6 +750,15 @@ if (notifToggleEl) {
 }
 renderNotifStatus();
 
+/* ---- Targets tab: collapsible sections (only the first is open by default) ---- */
+document.querySelectorAll("#tab-schedule .tsec-head").forEach(head => {
+  head.addEventListener("click", () => {
+    const open = head.classList.toggle("open");
+    const body = head.nextElementSibling;   // the .tsec-body
+    if (body) body.hidden = !open;
+  });
+});
+
 /* ---------- 5. Tab navigation ---------- */
 document.querySelectorAll(".tab-btn").forEach(btn => {
   btn.addEventListener("click", () => {
