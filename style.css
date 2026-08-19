@@ -348,6 +348,16 @@ main {
 .switch input:disabled { cursor: default; }
 .switch input:disabled + .switch-track { opacity: 0.5; }
 
+/* Sub-labels inside the consolidated Backup section ("File", "Google Drive"). */
+.backup-sub {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 4px 0 8px 0;
+}
+.backup-sub:not(:first-child) { margin-top: 18px; }
 .backup-row { display: flex; gap: 10px; }
 .backup-row .eat-btn {
   flex: 1;

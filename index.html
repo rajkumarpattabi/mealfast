@@ -9,7 +9,7 @@
     #tab-journal   Journal  — Logger (log meal/weight/waist) + Entries list
                               (Today / This Week / Older), one merged page
     #tab-trends    Trends   — Fasting, Measurement (weight/waist) & Consistency
-    #tab-schedule  Targets  — per-day fasting hours, weight goal, and backups
+    #tab-schedule  Settings — per-day fasting hours, weight goal, alerts, backup
   Styling is in style.css; all behaviour is wired up in app.js (loaded at the
   very bottom). The meta tags + manifest make this installable to the iOS home
   screen as a standalone PWA. Element ids here are the hooks app.js reads.
@@ -81,7 +81,7 @@
     </div>
 
     <div id="noScheduleNote" class="empty-note" hidden>
-      No schedule set for today. Go to the <strong>Targets</strong> tab to set your eating window.
+      No schedule set for today. Go to the <strong>Settings</strong> tab to set your eating window.
     </div>
   </section>
 
@@ -262,8 +262,9 @@
     </div>
 
     <div class="tsec">
-      <button class="tsec-head"><span class="tsec-chev">▸</span><span class="tsec-title">Backup — file</span></button>
+      <button class="tsec-head"><span class="tsec-chev">▸</span><span class="tsec-title">Backup</span></button>
       <div class="tsec-body" hidden>
+        <div class="backup-sub">File</div>
         <div class="backup-row">
           <button id="exportBtn" class="eat-btn">Export JSON</button>
           <button id="exportCsvBtn" class="eat-btn">Export CSV</button>
@@ -273,12 +274,8 @@
           <input type="file" id="importFile" accept="application/json,.json" hidden>
         </div>
         <p class="sched-hint">JSON is the full backup used to restore the app. CSV (entries + weights, oldest-first) is for opening in a spreadsheet. Import restores from a JSON backup.</p>
-      </div>
-    </div>
 
-    <div class="tsec">
-      <button class="tsec-head"><span class="tsec-chev">▸</span><span class="tsec-title">Backup — Google Drive</span></button>
-      <div class="tsec-body" hidden>
+        <div class="backup-sub">Google Drive</div>
         <div id="gdriveArea" class="gdrive-area"></div>
         <p class="sched-hint">Once connected, MealFast keeps an off-device copy in your Drive and refreshes it automatically about once a day when you open the app.</p>
       </div>
@@ -299,7 +296,7 @@
     <span class="tab-icon">▲</span><span>Trends</span>
   </button>
   <button class="tab-btn" data-tab="schedule">
-    <span class="tab-icon">▦</span><span>Targets</span>
+    <span class="tab-icon">⚙</span><span>Settings</span>
   </button>
 </nav>
 
