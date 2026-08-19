@@ -422,6 +422,19 @@ main {
 .tsec-title { font-size: 12px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
 .tsec-body { padding-bottom: 6px; }
 
+/* Journal group headers ("Logger", "Entries") — non-collapsible labels that
+   sit a touch bigger/bolder than the collapsible .tsec-title beneath them. */
+.group-title {
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  color: var(--cream);
+  margin: 22px 0 4px 0;
+}
+.group-title:first-child { margin-top: 8px; }
+/* First collapsible right under a group header shouldn't draw a top divider. */
+.group-title + .tsec { border-top: none; }
+
 /* ---- Log tab ---- */
 .type-row, .quick-row {
   display: flex;

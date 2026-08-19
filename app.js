@@ -750,8 +750,10 @@ if (notifToggleEl) {
 }
 renderNotifStatus();
 
-/* ---- Targets tab: collapsible sections (only the first is open by default) ---- */
-document.querySelectorAll("#tab-schedule .tsec-head").forEach(head => {
+/* ---- Collapsible sections (Targets tab + Journal's Logger sub-sections).
+   Each .tsec-head toggles its own .tsec-body; the default-open ones carry the
+   "open" class + a visible body in the markup. ---- */
+document.querySelectorAll(".tsec-head").forEach(head => {
   head.addEventListener("click", () => {
     const open = head.classList.toggle("open");
     const body = head.nextElementSibling;   // the .tsec-body
@@ -768,8 +770,7 @@ document.querySelectorAll(".tab-btn").forEach(btn => {
     document.getElementById("tab-" + btn.dataset.tab).classList.add("active");
     if (btn.dataset.tab === "trends") { renderInsight(); renderPersonalBests(); drawWeightChart(); renderFastCard(); renderHeatmap(); }
     if (btn.dataset.tab === "schedule") { renderSchedule(); renderWeightTarget(); renderBackupStatus(); renderNotifStatus(); }
-    if (btn.dataset.tab === "logs") { renderLogs(); }
-    if (btn.dataset.tab === "entries") { populateWeightSelect(); populateWaistSelect(); }
+    if (btn.dataset.tab === "journal") { populateWeightSelect(); populateWaistSelect(); renderLogs(); }
   });
 });
 

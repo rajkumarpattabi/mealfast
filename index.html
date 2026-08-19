@@ -2,12 +2,12 @@
 <!--
   MealFast — index.html (app shell / markup)
   ------------------------------------------------------------------------
-  Structure: a fixed top bar, a <main> holding five <section class="tab">
+  Structure: a fixed top bar, a <main> holding four <section class="tab">
   screens (only one is .active at a time), and a bottom <nav class="tabbar">
   whose buttons switch tabs. The tabs are:
     #tab-timer     Timer    — the fasting ring, current stage + next-stage box
-    #tab-entries   Entries  — log a meal/drink, a weight (kg), or a waist (cm)
-    #tab-logs      Logs     — all entries grouped into Today / This Week / Older
+    #tab-journal   Journal  — Logger (log meal/weight/waist) + Entries list
+                              (Today / This Week / Older), one merged page
     #tab-trends    Trends   — Fasting, Measurement (weight/waist) & Consistency
     #tab-schedule  Targets  — per-day fasting hours, weight goal, and backups
   Styling is in style.css; all behaviour is wired up in app.js (loaded at the
@@ -85,58 +85,74 @@
     </div>
   </section>
 
-  <!-- ENTRIES -->
-  <section id="tab-entries" class="tab">
-    <h3 class="section-title" style="margin-top:8px">Log meal / drink</h3>
-    <div class="card">
-      <input type="text" id="noteInput" class="note-input" placeholder="Note (optional) — e.g. meen kuzhambu + ragi">
+  <!-- JOURNAL (merged: Logger inputs + Entries list) -->
+  <!-- Two non-collapsible group headers ("Logger", "Entries"); the sub-sections
+       under each are the collapsible .tsec units. Default open: Meal + Today. -->
+  <section id="tab-journal" class="tab">
 
-      <div class="quick-row" id="quickRow">
-        <button class="quick-btn" data-min="0">Now</button>
-        <button class="quick-btn" data-min="15">15m ago</button>
-        <button class="quick-btn" data-min="30">30m ago</button>
-        <button class="quick-btn" data-min="60">1h ago</button>
-      </div>
+    <div class="group-title">Logger</div>
 
-      <p class="sched-hint" style="margin:0 0 10px">Tap a button above to log instantly, or set a date &amp; time and Save.</p>
+    <div class="tsec">
+      <button class="tsec-head open"><span class="tsec-chev">▸</span><span class="tsec-title">Meal / drink</span></button>
+      <div class="tsec-body">
+        <div class="card">
+          <input type="text" id="noteInput" class="note-input" placeholder="Note (optional) — e.g. meen kuzhambu + ragi">
 
-      <div class="exact-wrap">
-        <input type="date" id="exactDate" class="exact-input">
-        <input type="time" id="exactTime" class="exact-input">
-        <button id="saveLogBtn" class="primary-btn small">Save</button>
-      </div>
-    </div>
+          <div class="quick-row" id="quickRow">
+            <button class="quick-btn" data-min="0">Now</button>
+            <button class="quick-btn" data-min="15">15m ago</button>
+            <button class="quick-btn" data-min="30">30m ago</button>
+            <button class="quick-btn" data-min="60">1h ago</button>
+          </div>
 
-    <h3 class="section-title">Weight input</h3>
-    <div class="card">
-      <div id="weightField" class="weight-field weight-field-full">
-        <select id="weightSelect" class="weight-select"></select>
-        <span id="weightPlaceholder" class="weight-placeholder">Tap to set weight</span>
-      </div>
-      <div class="exact-wrap" style="margin-top:10px">
-        <input type="date" id="weightDate" class="exact-input">
-        <input type="time" id="weightTime" class="exact-input">
-        <button id="saveWeightBtn" class="primary-btn small">Save</button>
+          <p class="sched-hint" style="margin:0 0 10px">Tap a button above to log instantly, or set a date &amp; time and Save.</p>
+
+          <div class="exact-wrap">
+            <input type="date" id="exactDate" class="exact-input">
+            <input type="time" id="exactTime" class="exact-input">
+            <button id="saveLogBtn" class="primary-btn small">Save</button>
+          </div>
+        </div>
       </div>
     </div>
 
-    <h3 class="section-title">Waist input</h3>
-    <div class="card">
-      <div id="waistField" class="weight-field weight-field-full">
-        <select id="waistSelect" class="weight-select"></select>
-        <span class="weight-placeholder">Tap to set waist (cm)</span>
+    <div class="tsec">
+      <button class="tsec-head"><span class="tsec-chev">▸</span><span class="tsec-title">Weight</span></button>
+      <div class="tsec-body" hidden>
+        <div class="card">
+          <div id="weightField" class="weight-field weight-field-full">
+            <select id="weightSelect" class="weight-select"></select>
+            <span id="weightPlaceholder" class="weight-placeholder">Tap to set weight</span>
+          </div>
+          <div class="exact-wrap" style="margin-top:10px">
+            <input type="date" id="weightDate" class="exact-input">
+            <input type="time" id="weightTime" class="exact-input">
+            <button id="saveWeightBtn" class="primary-btn small">Save</button>
+          </div>
+        </div>
       </div>
-      <div class="exact-wrap" style="margin-top:10px">
-        <input type="date" id="waistDate" class="exact-input">
-        <input type="time" id="waistTime" class="exact-input">
-        <button id="saveWaistBtn" class="primary-btn small">Save</button>
-      </div>
-      <p class="sched-hint" style="margin:8px 0 0">Measure at the midpoint between your lowest rib and hip bone, on a gentle exhale — same spot &amp; time each week.</p>
     </div>
-  </section>
 
-  <!-- LOGS -->
-  <section id="tab-logs" class="tab">
+    <div class="tsec">
+      <button class="tsec-head"><span class="tsec-chev">▸</span><span class="tsec-title">Waist</span></button>
+      <div class="tsec-body" hidden>
+        <div class="card">
+          <div id="waistField" class="weight-field weight-field-full">
+            <select id="waistSelect" class="weight-select"></select>
+            <span class="weight-placeholder">Tap to set waist (cm)</span>
+          </div>
+          <div class="exact-wrap" style="margin-top:10px">
+            <input type="date" id="waistDate" class="exact-input">
+            <input type="time" id="waistTime" class="exact-input">
+            <button id="saveWaistBtn" class="primary-btn small">Save</button>
+          </div>
+          <p class="sched-hint" style="margin:8px 0 0">Measure at the midpoint between your lowest rib and hip bone, on a gentle exhale — same spot &amp; time each week.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="group-title">Entries</div>
+
     <div id="logList" class="log-sections"></div>
     <div id="logsEmpty" class="empty-note">No entries yet.</div>
   </section>
@@ -276,11 +292,8 @@
   <button class="tab-btn active" data-tab="timer">
     <span class="tab-icon">◔</span><span>Timer</span>
   </button>
-  <button class="tab-btn" data-tab="entries">
-    <span class="tab-icon">✎</span><span>Entries</span>
-  </button>
-  <button class="tab-btn" data-tab="logs">
-    <span class="tab-icon">▤</span><span>Logs</span>
+  <button class="tab-btn" data-tab="journal">
+    <span class="tab-icon">✎</span><span>Journal</span>
   </button>
   <button class="tab-btn" data-tab="trends">
     <span class="tab-icon">▲</span><span>Trends</span>
