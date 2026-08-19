@@ -449,9 +449,32 @@ function notify(title, body, tag) {
 }
 
 // Per-fast notification bookkeeping (reset when a new fast starts).
+// PERSISTED to localStorage so a suspended/relaunched app can still detect a
+// stage (or goal) that was crossed while iOS had the PWA frozen: on the next
+// live tick — including the very first render after the app is reopened — we
+// compare the current stage against the last stage we actually ANNOUNCED for
+// this same fast and fire the one catch-up alert if it advanced. iOS can't run
+// us in the background, so this "fire on resume" path is what makes stage/goal
+// alerts reliable in practice.
 let notifFastId = null;      // identity (fastStart ms) of the fast we're tracking
 let notifStageKey = null;    // deepest stage already announced for this fast
 let notifGoalDone = false;   // goal alert already fired for this fast
+(function loadNotifState() {
+  try {
+    const s = JSON.parse(localStorage.getItem("mf_notif_state") || "null");
+    if (s && typeof s === "object") {
+      notifFastId = (typeof s.fastId === "number") ? s.fastId : null;
+      notifStageKey = s.stageKey || null;
+      notifGoalDone = !!s.goalDone;
+    }
+  } catch (e) {}
+})();
+function saveNotifState() {
+  try {
+    localStorage.setItem("mf_notif_state",
+      JSON.stringify({ fastId: notifFastId, stageKey: notifStageKey, goalDone: notifGoalDone }));
+  } catch (e) {}
+}
 
 let lastPhase = null;
 // While fasting, the ring can emphasise time REMAINING (default) or time ELAPSED.
@@ -595,12 +618,20 @@ function renderTimer() {
     // notifying; thereafter we alert only when the stage advances on a live tick.
     const fastId = state.fastStart.getTime();
     if (fastId !== notifFastId) {
+      // A different fast than we were tracking → baseline to the current stage
+      // WITHOUT notifying (avoids a false alert on the eating→fast transition or
+      // when a brand-new fast is opened partway through).
       notifFastId = fastId; notifStageKey = stage.key; notifGoalDone = false;
+      saveNotifState();
     } else if (stage.key !== notifStageKey) {
+      // Same fast, stage changed. This branch runs on a live boundary crossing
+      // AND on the first tick after the app resumes from suspension/reload, so a
+      // stage crossed while iOS had us frozen still fires exactly one alert here.
       if (STAGE_ORDER.indexOf(stage.key) > STAGE_ORDER.indexOf(notifStageKey) && STAGE_BLURB[stage.key]) {
         notify(stage.name, STAGE_BLURB[stage.key], "mealfast-stage");
       }
       notifStageKey = stage.key;
+      saveNotifState();
     }
 
     // --- Ring progress & colour: unchanged from the original design ---
@@ -642,10 +673,14 @@ function renderTimer() {
     setNextBox("Next phase", false, "—");
   }
 
-  // Congratulatory goal alert — fires once, only on the live fasting→goal cross.
-  if (lastPhase === "fasting" && state.phase === "goal" && !notifGoalDone) {
+  // Congratulatory goal alert — fires once per fast. Gated only on the persisted
+  // notifGoalDone flag (not on lastPhase) so it still fires the moment the app
+  // resumes if the goal was reached while iOS had us suspended. notifGoalDone is
+  // reset to false when a new fast baselines above, so each fast can alert once.
+  if (state.phase === "goal" && !notifGoalDone) {
     notifyGoalReached(state.target);
     notifGoalDone = true;
+    saveNotifState();
   }
   lastPhase = state.phase;
   updateStreakBadge(now);
@@ -695,6 +730,17 @@ document.getElementById("periodBox").addEventListener("click", () => {
 
 setInterval(renderTimer, 1000);
 renderTimer();
+
+// iOS suspends the 1-second interval as soon as the PWA is backgrounded or the
+// screen locks, so a stage/goal crossed while away isn't seen until we run
+// again. Force an immediate renderTimer() the moment the app is shown again
+// (unlock, app-switch back, or a cold relaunch's bfcache restore) — combined
+// with the persisted bookkeeping above, this fires any missed alert right then.
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") renderTimer();
+});
+window.addEventListener("focus", renderTimer);
+window.addEventListener("pageshow", renderTimer);
 
 /* ---- Notification on/off slider (Targets tab) ---- */
 // Reflect current state on the toggle + hint.
