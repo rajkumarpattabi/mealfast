@@ -56,6 +56,15 @@ body {
   text-transform: uppercase;
   color: var(--turmeric);
 }
+/* Wordmark + tiny build tag, kept together on the left of the top bar. */
+.topbar-brand { display: inline-flex; align-items: baseline; }
+.topbar-ver {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--muted);
+  margin-left: 6px;
+}
 
 .streak-badge {
   font-size: 12px;
@@ -93,6 +102,22 @@ main {
   color: var(--muted);
   font-weight: 600;
   margin-top: 6px;
+  font-variant-numeric: tabular-nums;
+}
+/* Ring "Remaining" view: small "fast ends @" label over the clock time. */
+.pe-lead {
+  display: block;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+.pe-time {
+  display: block;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--cream);
+  margin-top: 1px;
   font-variant-numeric: tabular-nums;
 }
 

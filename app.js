@@ -36,6 +36,11 @@
  * ==========================================================================*/
 
 /* ---------- 1. Storage helpers (all data stays in this browser, on this device) ---------- */
+// App version — shown tiny next to the "MealFast" wordmark so you can confirm at
+// a glance which build the phone is actually running. Keep this in lock-step
+// with CACHE_NAME in sw.js on every deploy.
+const APP_VERSION = "v66";
+
 // localStorage keys for every persisted collection / setting.
 const STORE_KEYS = { logs: "mf_logs", weights: "mf_weights", waist: "mf_waist", schedule: "mf_schedule", wtarget: "mf_wtarget" };
 const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
@@ -488,11 +493,12 @@ function formatHMS(ms) {
   return `${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}`;
 }
 
-// "fast ends @ 1:30 PM" for the ring's Remaining view. Time uses the device's
-// locale + 12/24-hour preference (empty locale array = system default). If the
-// fast crosses midnight we append "(tmrw)"; if it lands further out (24h+ goals)
-// we append the short weekday instead so the day is still unambiguous.
-function fastEndLabel(goalAt, now) {
+// Clock time the fast ends, for the ring's Remaining view (shown under a small
+// "fast ends @" label). Time uses the device's locale + 12/24-hour preference
+// (empty locale array = system default). If the fast crosses midnight we append
+// "(tmrw)"; if it lands further out (24h+ goals) we append the short weekday
+// instead so the day is still unambiguous.
+function fastEndTime(goalAt, now) {
   const t = goalAt.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
   const d0 = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const d1 = new Date(goalAt.getFullYear(), goalAt.getMonth(), goalAt.getDate());
@@ -500,7 +506,7 @@ function fastEndLabel(goalAt, now) {
   let suffix = "";
   if (days === 1) suffix = " (tmrw)";
   else if (days > 1) suffix = " (" + goalAt.toLocaleDateString([], { weekday: "short" }) + ")";
-  return `fast ends @ ${t}${suffix}`;
+  return `${t}${suffix}`;
 }
 
 function fastColor(elapsedFrac) {
@@ -671,8 +677,9 @@ function renderTimer() {
         // "Remaining" view: show the actual clock time the fast ends (the thing
         // you plan around) instead of a bare "% to go". goalAt = fast start +
         // target hours; formatted in the device's own 12/24-hour setting.
+        // Two stacked lines: a small "fast ends @" label, then the time below.
         countdown.textContent = formatHMS(remaining);
-        pctEl.textContent = fastEndLabel(state.goalAt, now);
+        pctEl.innerHTML = `<span class="pe-lead">fast ends @</span><span class="pe-time">${fastEndTime(state.goalAt, now)}</span>`;
       }
     } else {   // goal reached — extended fast (circle counts up)
       setRingDot(0, "", false);   // ring is full; no leading dot
@@ -745,6 +752,9 @@ document.getElementById("periodBox").addEventListener("click", () => {
   localStorage.setItem("mf_period_mode", periodMode);
   renderPeriodBox(new Date());
 });
+
+// Stamp the running build next to the wordmark.
+(function () { const v = document.getElementById("appVer"); if (v) v.textContent = APP_VERSION; })();
 
 setInterval(renderTimer, 1000);
 renderTimer();
