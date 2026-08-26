@@ -10,7 +10,7 @@
  * Bump CACHE_NAME on every deploy: the new worker installs the new cache and
  * the activate handler deletes the old one. (This is the "vNN" you increment.)
  * ==========================================================================*/
-const CACHE_NAME = "mealfast-v64";
+const CACHE_NAME = "mealfast-v65";
 const ASSETS = [
   "./",
   "./index.html",

@@ -488,6 +488,21 @@ function formatHMS(ms) {
   return `${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}`;
 }
 
+// "fast ends @ 1:30 PM" for the ring's Remaining view. Time uses the device's
+// locale + 12/24-hour preference (empty locale array = system default). If the
+// fast crosses midnight we append "(tmrw)"; if it lands further out (24h+ goals)
+// we append the short weekday instead so the day is still unambiguous.
+function fastEndLabel(goalAt, now) {
+  const t = goalAt.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  const d0 = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const d1 = new Date(goalAt.getFullYear(), goalAt.getMonth(), goalAt.getDate());
+  const days = Math.round((d1 - d0) / 86400000);
+  let suffix = "";
+  if (days === 1) suffix = " (tmrw)";
+  else if (days > 1) suffix = " (" + goalAt.toLocaleDateString([], { weekday: "short" }) + ")";
+  return `fast ends @ ${t}${suffix}`;
+}
+
 function fastColor(elapsedFrac) {
   const f = Math.min(1, Math.max(0, elapsedFrac));
   return `hsl(${Math.round(f * 120)}, 68%, 47%)`;   // red (0) → green (1)
@@ -653,8 +668,11 @@ function renderTimer() {
         countdown.textContent = formatHMS(elapsed);
         pctEl.textContent = `${pctDone}% of goal`;
       } else {
+        // "Remaining" view: show the actual clock time the fast ends (the thing
+        // you plan around) instead of a bare "% to go". goalAt = fast start +
+        // target hours; formatted in the device's own 12/24-hour setting.
         countdown.textContent = formatHMS(remaining);
-        pctEl.textContent = `${Math.max(0, 100 - pctDone)}% to go`;
+        pctEl.textContent = fastEndLabel(state.goalAt, now);
       }
     } else {   // goal reached — extended fast (circle counts up)
       setRingDot(0, "", false);   // ring is full; no leading dot
