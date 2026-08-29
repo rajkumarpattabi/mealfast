@@ -601,7 +601,21 @@ main {
   border-radius: 10px;
   padding: 11px 12px;
   margin-bottom: 8px;
+  border-left: 3px solid transparent;   /* category colour accent (set below) */
 }
+/* Colour-code rows by category so they're easy to pick out while scrolling:
+   meal/drink = turmeric, weight = leaf, waist = chili. The matching type label
+   is tinted the same colour. */
+.li-log    { border-left-color: var(--turmeric); }
+.li-weight { border-left-color: var(--leaf); }
+.li-waist  { border-left-color: var(--chili); }
+.li-log    .li-type { color: var(--turmeric); }
+.li-weight .li-type { color: var(--leaf); }
+.li-waist  .li-type { color: var(--chili); }
+
+/* Entries category filter bar. */
+.log-filter { margin: 2px 0 12px; }
+.log-filter .seg-btn { font-size: 12px; padding: 7px 0; }
 
 .li-date {
   font-size: 12px;

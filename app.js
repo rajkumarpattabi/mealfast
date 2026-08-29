@@ -39,7 +39,7 @@
 // App version — shown tiny next to the "MealFast" wordmark so you can confirm at
 // a glance which build the phone is actually running. Keep this in lock-step
 // with CACHE_NAME in sw.js on every deploy.
-const APP_VERSION = "v67";
+const APP_VERSION = "v68";
 
 // localStorage keys for every persisted collection / setting.
 const STORE_KEYS = { logs: "mf_logs", weights: "mf_weights", waist: "mf_waist", schedule: "mf_schedule", wtarget: "mf_wtarget" };
@@ -903,6 +903,9 @@ resetEntryDateTime();
 
 // Collapse state for the Logs tab sections (Today open by default).
 const logSectionsOpen = { today: true, week: false, older: false };
+// Journal "Entries" category filter: "all" | "log" (meal/drink times) | "weight" | "waist".
+// The values line up with each item's `kind`, so filtering is a direct match.
+let logFilter = localStorage.getItem("mf_log_filter") || "all";
 
 // The Logs tab: every meal/drink/water/electrolyte log (including the Timer-tab
 // eating markers) plus every weight entry, newest first, each deletable.
@@ -928,8 +931,16 @@ function renderLogs() {
   }));
   items.sort((a,b) => b.when - a.when);
 
+  // Apply the category filter (kind === filter). "all" keeps everything.
+  const shown = logFilter === "all" ? items : items.filter(it => it.kind === logFilter);
+
   list.innerHTML = "";
-  if (items.length === 0) { empty.hidden = false; return; }
+  if (shown.length === 0) {
+    empty.hidden = false;
+    empty.textContent = items.length === 0 ? "No entries yet."
+      : `No ${logFilter === "log" ? "meal" : logFilter} entries yet.`;
+    return;
+  }
   empty.hidden = true;
 
   // Group into Today / This Week (past 6 days) / Older (7+ days ago).
@@ -937,7 +948,7 @@ function renderLogs() {
   const todayStart = new Date(now); todayStart.setHours(0, 0, 0, 0);
   const weekBound = todayStart.getTime() - 6 * 86400000;   // start of the day 6 days ago
   const groups = { today: [], week: [], older: [] };
-  items.forEach(it => {
+  shown.forEach(it => {
     const t = it.when.getTime();
     if (t >= todayStart.getTime()) groups.today.push(it);
     else if (t >= weekBound) groups.week.push(it);
@@ -988,7 +999,7 @@ function renderLogs() {
 // Build one log row (with its tap-to-edit handler).
 function buildLogItem(it) {
   const li = document.createElement("li");
-  li.className = "log-item";
+  li.className = "log-item li-" + it.kind;   // li-log / li-weight / li-waist → colour accent
   li.dataset.kind = it.kind;
   li.dataset.id = it.id;
   li.innerHTML = `
@@ -1002,6 +1013,24 @@ function buildLogItem(it) {
   li.addEventListener("click", () => openEditSheet(li.dataset.kind, li.dataset.id));
   return li;
 }
+
+/* ---- Journal "Entries" category filter (All / Meals / Weight / Waist) ---- */
+(function () {
+  const bar = document.getElementById("logFilter");
+  if (!bar) return;
+  // Reflect the persisted choice on load.
+  bar.querySelectorAll(".seg-btn").forEach(b =>
+    b.classList.toggle("active", b.dataset.cat === logFilter));
+  bar.querySelectorAll(".seg-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      logFilter = btn.dataset.cat;
+      localStorage.setItem("mf_log_filter", logFilter);
+      bar.querySelectorAll(".seg-btn").forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+      renderLogs();
+    });
+  });
+})();
 
 // Re-render everything that depends on logs/weights after an edit or delete.
 function afterEntryChange() {
@@ -1571,6 +1600,14 @@ function weightTargetLine(buckets) {
   return { active: true, targetYs, baseKg, targetToday: at(Date.now()) };
 }
 
+// Fasting-hours label for the Duration bars: floor DOWN to the nearest half hour
+// (17.25→"17", 17.5→"17.5", 17.6→"17.5", 18→"18"). Keeps the number honest —
+// never rounds a fast up — while still showing the useful half-hour granularity.
+function fmtHalfH(v) {
+  const f = Math.floor(v * 2) / 2;
+  return Number.isInteger(f) ? String(f) : f.toFixed(1);
+}
+
 function drawFastChart() {
   const canvas = document.getElementById("fastChart");
   const empty = document.getElementById("fastEmpty");
@@ -1613,7 +1650,7 @@ function drawFastChart() {
     if (barW < 12 || isYear) return;
     ctx.font = "600 9px -apple-system, system-ui, sans-serif";
     ctx.textAlign = "center";
-    const label = isYear ? `${Math.round(x.value)}%` : String(Math.floor(x.value));
+    const label = isYear ? `${Math.round(x.value)}%` : fmtHalfH(x.value);
     if (barH >= 16) {
       ctx.fillStyle = "#1B2430";       // dark, reads on the bright bar
       ctx.textBaseline = "middle";
