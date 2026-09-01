@@ -39,7 +39,7 @@
 // App version — shown tiny next to the "MealFast" wordmark so you can confirm at
 // a glance which build the phone is actually running. Keep this in lock-step
 // with CACHE_NAME in sw.js on every deploy.
-const APP_VERSION = "v69";
+const APP_VERSION = "v70";
 
 // localStorage keys for every persisted collection / setting.
 const STORE_KEYS = { logs: "mf_logs", weights: "mf_weights", waist: "mf_waist", schedule: "mf_schedule", wtarget: "mf_wtarget" };
@@ -1475,6 +1475,24 @@ function seriesAvgInRange(arr, key, startMs, endMs) {
 }
 function weightAvgInRange(startMs, endMs) { return seriesAvgInRange(weights, "weightKg", startMs, endMs); }
 
+// Most recent reading strictly before `beforeMs` — the highest weigh-in on the
+// latest prior date (same highest-per-date rule as in-window buckets). Used to
+// seed carry-forward so a window that opens on empty days still starts its line
+// from the last value carried over from the previous period. null if none exist.
+function lastSeriesValueBefore(arr, key, beforeMs) {
+  const byDate = {};
+  arr.forEach(w => {
+    const t = new Date(w.timestamp).getTime();
+    if (t >= beforeMs) return;
+    const dayMs = new Date(new Date(w.timestamp).toDateString()).getTime();
+    const v = Number(w[key]);
+    if (byDate[dayMs] == null || v > byDate[dayMs]) byDate[dayMs] = v;
+  });
+  let bestDay = -Infinity, bestVal = null;
+  for (const k in byDate) { const dm = Number(k); if (dm > bestDay) { bestDay = dm; bestVal = byDate[k]; } }
+  return bestVal;
+}
+
 // Actual fast that STARTED on day `d`: real duration (last meal of the day →
 // next time you ate, or now if still fasting), that day's target, and whether
 // it was met. null if no fast started that day.
@@ -1515,11 +1533,12 @@ function drawWeightChart() {
   const canvas = document.getElementById("weightChart");
   const empty = document.getElementById("weightEmpty");
   const isWaist = measureMode === "waist";
+  const arr = isWaist ? waist : weights;
+  const key = isWaist ? "cm" : "weightKg";
   const buckets = trendBuckets(trendRange, trendAnchor());
-  const ys = buckets.map(b => isWaist
-    ? seriesAvgInRange(waist, "cm", b.start, b.end)
-    : weightAvgInRange(b.start, b.end));
-  const present = ys.filter(v => v != null);
+  // real = actual per-bucket value (null when that day/month has no reading) — drives the dots.
+  const real = buckets.map(b => seriesAvgInRange(arr, key, b.start, b.end));
+  const present = real.filter(v => v != null);
   empty.textContent = isWaist ? "No waist entries in this range." : "No weight entries in this range.";
   if (present.length === 0) { empty.hidden = false; canvas.style.display = "none";
     document.getElementById("weightLegend").hidden = true;
@@ -1527,9 +1546,16 @@ function drawWeightChart() {
   empty.hidden = true; canvas.style.display = "block";
   if (canvas.clientWidth === 0) return;   // Trends tab hidden — will redraw on show
 
+  // filled = carry-forward series for a continuous line: each empty bucket holds
+  // the last known value. Leading empty buckets are seeded from the most recent
+  // reading BEFORE this window (the previous period), so the line has no break.
+  // (Buckets before the first-ever reading stay null — nothing to carry.)
+  let carry = lastSeriesValueBefore(arr, key, buckets[0].start);
+  const filled = real.map(v => { if (v != null) carry = v; return carry; });
+
   // Weight target trajectory (weight only — waist has no target line).
   const wt = isWaist ? null : weightTargetLine(buckets);   // { active, targetYs, baseKg, targetToday } | null
-  const scaleVals = present.slice();
+  const scaleVals = filled.filter(v => v != null);   // include carried values so a flat carried segment fits
   if (wt) buckets.forEach((b, i) => { if (wt.targetYs[i] != null) scaleVals.push(wt.targetYs[i]); });
 
   const scale = niceScale(Math.min(...scaleVals), Math.max(...scaleVals), 4);
@@ -1555,7 +1581,7 @@ function drawWeightChart() {
   const showAvg = present.length >= 3;
   if (showAvg) {
     const seen = [];
-    const avg = ys.map(v => {
+    const avg = real.map(v => {   // rolling average is built from real readings only
       if (v == null) return null;
       seen.push(v);
       const w = seen.slice(-3);
@@ -1576,17 +1602,19 @@ function drawWeightChart() {
     ctx.restore();
   }
 
-  // Raw weight line + points.
+  // Raw measurement line: drawn from the carry-forward `filled` series so it's
+  // continuous across empty days (flat where a value is held). Dots are drawn
+  // from `real` only, so a marker appears solely on days you actually logged.
   ctx.strokeStyle = "#D9A441"; ctx.lineWidth = 2; ctx.beginPath();
   let started = false;
-  ys.forEach((v, i) => {
+  filled.forEach((v, i) => {
     if (v == null) return;
     const x = a.sx(i), y = a.sy(v);
     if (!started) { ctx.moveTo(x, y); started = true; } else ctx.lineTo(x, y);
   });
   ctx.stroke();
   ctx.fillStyle = "#D9A441";
-  ys.forEach((v, i) => { if (v == null) return; ctx.beginPath(); ctx.arc(a.sx(i), a.sy(v), 3, 0, Math.PI * 2); ctx.fill(); });
+  real.forEach((v, i) => { if (v == null) return; ctx.beginPath(); ctx.arc(a.sx(i), a.sy(v), 3, 0, Math.PI * 2); ctx.fill(); });
 
   // Legend + target status.
   const legend = document.getElementById("weightLegend");
