@@ -832,6 +832,30 @@ canvas { width: 100%; height: 210px; display: block; }
 .range-seg { flex: 0 0 auto; margin: 0 0 0 auto; gap: 2px; padding: 2px; }
 .range-seg .seg-btn { min-width: 28px; padding: 6px 8px; font-size: 13px; }
 
+/* Period pager (‹ label ›) for the Fasting + Measurement charts. */
+.trend-pager {
+  display: flex; align-items: center; justify-content: center; gap: 10px;
+  margin: -4px 0 14px;
+}
+.pager-btn {
+  flex: none;
+  width: 34px; height: 34px;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--ink-2); color: var(--cream);
+  border: none; border-radius: 9px;
+  font-size: 20px; line-height: 1; cursor: pointer;
+  font-family: inherit;
+  -webkit-tap-highlight-color: transparent;
+}
+.pager-btn:disabled { opacity: 0.3; cursor: default; }
+.pager-label {
+  min-width: 130px; text-align: center;
+  background: none; border: none; color: var(--muted);
+  font-size: 13px; font-weight: 700; letter-spacing: 0.02em;
+  cursor: pointer; font-family: inherit;
+  -webkit-tap-highlight-color: transparent;
+}
+
 /* Personal bests strip (Trends tab) */
 .bests-card { padding: 12px 14px; }
 .bests-title { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); font-weight: 700; margin-bottom: 10px; }

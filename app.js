@@ -39,7 +39,7 @@
 // App version — shown tiny next to the "MealFast" wordmark so you can confirm at
 // a glance which build the phone is actually running. Keep this in lock-step
 // with CACHE_NAME in sw.js on every deploy.
-const APP_VERSION = "v68";
+const APP_VERSION = "v69";
 
 // localStorage keys for every persisted collection / setting.
 const STORE_KEYS = { logs: "mf_logs", weights: "mf_weights", waist: "mf_waist", schedule: "mf_schedule", wtarget: "mf_wtarget" };
@@ -842,7 +842,7 @@ document.querySelectorAll(".tab-btn").forEach(btn => {
     document.querySelectorAll(".tab").forEach(s => s.classList.remove("active"));
     btn.classList.add("active");
     document.getElementById("tab-" + btn.dataset.tab).classList.add("active");
-    if (btn.dataset.tab === "trends") { renderInsight(); renderPersonalBests(); drawWeightChart(); renderFastCard(); renderHeatmap(); }
+    if (btn.dataset.tab === "trends") { renderInsight(); renderPersonalBests(); drawWeightChart(); renderFastCard(); renderHeatmap(); updatePager(); }
     if (btn.dataset.tab === "schedule") { renderSchedule(); renderWeightTarget(); renderBackupStatus(); renderNotifStatus(); }
     if (btn.dataset.tab === "journal") { populateWeightSelect(); populateWaistSelect(); renderLogs(); }
   });
@@ -1406,6 +1406,35 @@ let trendRange = localStorage.getItem("mf_trend_range") || "week";
 let measureMode = localStorage.getItem("mf_measure_mode") === "waist" ? "waist" : "weight";  // weight | waist toggle on the trend card
 let fastMode = localStorage.getItem("mf_fast_mode") === "stages" ? "stages" : "duration";     // duration | stages toggle on the fasting card
 
+// How many whole periods back the Fasting + Measurement charts are paged, via the
+// ‹ › arrows. 0 = current period. NOT persisted — the charts always open on the
+// current period. Reset to 0 whenever the W/M/Y range changes.
+let trendOffset = 0;
+
+// Reference "today" for building the chart buckets, shifted back by trendOffset
+// periods (a period = the current range's window: 7d / 30d / 12 months).
+function trendAnchor() {
+  const d = new Date();
+  if (trendOffset > 0) {
+    if (trendRange === "week")       d.setDate(d.getDate() - trendOffset * 7);
+    else if (trendRange === "month") d.setDate(d.getDate() - trendOffset * 30);
+    else                             d.setMonth(d.getMonth() - trendOffset * 12);
+  }
+  return d;
+}
+
+// Label shown between the arrows: "This week/month/year" at the current period,
+// otherwise the paged window's span (e.g. "30-Jul – 05-Aug", or "Feb – Jul").
+function trendPeriodLabel() {
+  if (trendOffset === 0) {
+    return trendRange === "week" ? "This week" : trendRange === "month" ? "This month" : "This year";
+  }
+  const bk = trendBuckets(trendRange, trendAnchor());
+  const first = bk[0], last = bk[bk.length - 1];
+  if (trendRange === "year") return `${first.label} – ${last.label}`;
+  return `${fmtDate(new Date(first.start))} – ${fmtDate(new Date(last.start))}`;
+}
+
 // Ordered oldest→newest buckets for the selected range.
 function trendBuckets(range, now) {
   const buckets = [];
@@ -1486,7 +1515,7 @@ function drawWeightChart() {
   const canvas = document.getElementById("weightChart");
   const empty = document.getElementById("weightEmpty");
   const isWaist = measureMode === "waist";
-  const buckets = trendBuckets(trendRange, new Date());
+  const buckets = trendBuckets(trendRange, trendAnchor());
   const ys = buckets.map(b => isWaist
     ? seriesAvgInRange(waist, "cm", b.start, b.end)
     : weightAvgInRange(b.start, b.end));
@@ -1611,10 +1640,10 @@ function fmtHalfH(v) {
 function drawFastChart() {
   const canvas = document.getElementById("fastChart");
   const empty = document.getElementById("fastEmpty");
-  const now = new Date(), nowMs = now.getTime();
+  const nowMs = Date.now();                         // real now — caps any still-open fast
   const isWeek = trendRange === "week";
   const isYear = trendRange === "year";
-  const buckets = trendBuckets(trendRange, now);
+  const buckets = trendBuckets(trendRange, trendAnchor());   // paged window
   const eats = eatsAscending();
 
   // Week/Month: actual fast hours per bar. Year: monthly adherence % (share of the
@@ -1724,7 +1753,7 @@ function fmtDurH(h) {
 function renderStageBreakdown() {
   const host = document.getElementById("stageBreakdown");
   if (!host) return;
-  const { bands, total } = stageBandsForRange(trendRange, new Date());
+  const { bands, total } = stageBandsForRange(trendRange, trendAnchor());
   if (total <= 0) {
     host.innerHTML = `<div class="empty-note">Log some meals to see your stage breakdown.</div>`;
     return;
@@ -1765,17 +1794,45 @@ function renderFastCard() {
 
 function setTrendRange(r) {
   trendRange = r;
+  trendOffset = 0;                    // a new range starts at the current period
   localStorage.setItem("mf_trend_range", r);
   document.querySelectorAll("#trendRange .seg-btn").forEach(b => b.classList.toggle("active", b.dataset.range === r));
   drawWeightChart();
   renderFastCard();
-  renderHeatmap();
+  renderHeatmap();                    // heatmap stays anchored to today (its own long-range view)
+  updatePager();
 }
 document.getElementById("trendRange").addEventListener("click", (e) => {
   const b = e.target.closest(".seg-btn");
   if (b) setTrendRange(b.dataset.range);
 });
 document.querySelectorAll("#trendRange .seg-btn").forEach(b => b.classList.toggle("active", b.dataset.range === trendRange));
+
+/* ---- Period pager: step the Fasting + Measurement charts through past windows ---- */
+function updatePager() {
+  const lab = document.getElementById("pagerLabel");
+  const next = document.getElementById("pagerNext");
+  if (lab) lab.textContent = trendPeriodLabel();
+  if (next) next.disabled = (trendOffset === 0);   // no future to show
+}
+// delta: +1 = older (back), -1 = newer (toward today). Clamped at the current period.
+function pageTrend(delta) {
+  const n = trendOffset + delta;
+  if (n < 0) return;
+  trendOffset = n;
+  drawWeightChart();
+  renderFastCard();
+  updatePager();
+}
+document.getElementById("pagerPrev").addEventListener("click", () => pageTrend(1));
+document.getElementById("pagerNext").addEventListener("click", () => pageTrend(-1));
+document.getElementById("pagerLabel").addEventListener("click", () => {   // tap the label → jump to current
+  if (trendOffset === 0) return;
+  trendOffset = 0;
+  drawWeightChart();
+  renderFastCard();
+  updatePager();
+});
 
 // Weight / Waist toggle on the trend card.
 function setMeasureMode(m) {
