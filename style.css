@@ -609,11 +609,13 @@ main {
 .li-log    { border-left-color: var(--turmeric); }
 .li-weight { border-left-color: var(--leaf); }
 .li-waist  { border-left-color: var(--chili); }
-.li-target { border-left-color: #8E86C7; }              /* target = soft indigo (config, not a measurement) */
+.li-target  { border-left-color: #8E86C7; }             /* weight target = soft indigo (config, not a measurement) */
+.li-ftarget { border-left-color: #5FA0A8; }             /* fasting target = soft teal */
 .li-log    .li-type { color: var(--turmeric); }
 .li-weight .li-type { color: var(--leaf); }
 .li-waist  .li-type { color: var(--chili); }
-.li-target .li-type { color: #9B93D0; }
+.li-target  .li-type { color: #9B93D0; }
+.li-ftarget .li-type { color: #6FB3BB; }
 .li-readonly { cursor: default; }                        /* target rows aren't tappable */
 
 /* Entries category filter bar. */

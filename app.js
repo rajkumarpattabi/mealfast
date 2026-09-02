@@ -39,10 +39,10 @@
 // App version — shown tiny next to the "MealFast" wordmark so you can confirm at
 // a glance which build the phone is actually running. Keep this in lock-step
 // with CACHE_NAME in sw.js on every deploy.
-const APP_VERSION = "v71";
+const APP_VERSION = "v72";
 
 // localStorage keys for every persisted collection / setting.
-const STORE_KEYS = { logs: "mf_logs", weights: "mf_weights", waist: "mf_waist", schedule: "mf_schedule", wtarget: "mf_wtarget", wtargetHistory: "mf_wtarget_history" };
+const STORE_KEYS = { logs: "mf_logs", weights: "mf_weights", waist: "mf_waist", schedule: "mf_schedule", wtarget: "mf_wtarget", wtargetHistory: "mf_wtarget_history", scheduleHistory: "mf_schedule_history" };
 const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 
 // Read + JSON-parse a stored value; return `fallback` if missing or corrupt.
@@ -97,6 +97,12 @@ save(STORE_KEYS.schedule, schedule);
 // Weight target: { dir: "off"|"reduce"|"increase", rate: kg per week }
 let wtarget = load(STORE_KEYS.wtarget, { dir: "off", rate: 0.5 });
 
+// Journal view state — declared up here (before the initial renderTimer(), which
+// can trigger renderLogs when it auto-closes/caps a stale fast) so they're never
+// read in their temporal dead zone.
+const logSectionsOpen = { today: true, week: false, older: false };  // Today open by default
+let logFilter = localStorage.getItem("mf_log_filter") || "all";      // All | log | weight | waist | target
+
 // Short unique id for a new log/weight/waist entry (timestamp + random suffix).
 function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
 
@@ -148,10 +154,71 @@ function setTargetSegment(dir, rate) {
 ensureTargetSeed();
 if (wtargetHistory.length) { const c = currentTarget(); wtarget = { dir: c.dir, rate: c.rate }; }
 
+/* ---------- Fasting-schedule timeline (non-retroactive per-weekday targets) ----
+   Same idea as the weight-target timeline: instead of one live schedule that
+   re-judges all past days when edited, keep a TIMELINE of full 7-day schedule
+   snapshots { effMs, schedule }. Historical reads (streak, heatmap, adherence,
+   Duration chart) look up the snapshot in effect on that date; the live timer +
+   Settings use the latest. `schedule` stays as the current mirror. First
+   snapshot is seeded at your earliest logged meal, so migration changes nothing
+   until you next edit; edits take effect from the start of the current week. */
+let scheduleHistory = load(STORE_KEYS.scheduleHistory, null);
+if (!Array.isArray(scheduleHistory)) scheduleHistory = [];
+function cloneSchedule(s) { return s.map(d => ({ weekday: d.weekday, targetHours: d.targetHours })); }
+function firstEatMs() {
+  let m = Infinity;
+  for (const l of logs) { if (l.type === "Meal" || l.type === "Drink") { const t = new Date(l.timestamp).getTime(); if (t < m) m = t; } }
+  return m === Infinity ? null : m;
+}
+function ensureScheduleSeed() {
+  if (scheduleHistory.length === 0) {
+    const fm = firstEatMs();
+    scheduleHistory.push({ effMs: fm != null ? fm : Date.now(), schedule: cloneSchedule(schedule) });
+    save(STORE_KEYS.scheduleHistory, scheduleHistory);
+  }
+}
+// If the seed predates the first meal (brand-new user seeded at "now"), pull it
+// back to the first meal once one is logged, so history anchors correctly.
+function anchorScheduleSeed() {
+  const fm = firstEatMs();
+  if (scheduleHistory.length && fm != null && fm < scheduleHistory[0].effMs) {
+    scheduleHistory[0].effMs = fm; save(STORE_KEYS.scheduleHistory, scheduleHistory);
+  }
+}
+function currentScheduleVer() { return scheduleHistory.length ? scheduleHistory[scheduleHistory.length - 1].schedule : schedule; }
+// The schedule snapshot governing time `t` (last one whose effMs <= t).
+function scheduleAt(t) {
+  let ver = null;
+  for (const s of scheduleHistory) { if (s.effMs <= t) ver = s.schedule; else break; }
+  return ver || (scheduleHistory[0] ? scheduleHistory[0].schedule : schedule);
+}
+// Record a schedule edit: effective from the start of the current week (never
+// before the first snapshot). Same-week edits update that week's snapshot.
+function setScheduleSegment(newSchedule) {
+  let effMs = weekStartMs(new Date());
+  if (scheduleHistory.length && effMs < scheduleHistory[0].effMs) effMs = scheduleHistory[0].effMs;
+  const i = scheduleHistory.findIndex(s => s.effMs === effMs);
+  if (i >= 0) scheduleHistory[i].schedule = cloneSchedule(newSchedule);
+  else { scheduleHistory.push({ effMs, schedule: cloneSchedule(newSchedule) }); scheduleHistory.sort((a, b) => a.effMs - b.effMs); }
+  save(STORE_KEYS.scheduleHistory, scheduleHistory);
+  schedule = cloneSchedule(newSchedule);
+  save(STORE_KEYS.schedule, schedule);
+}
+// Compact schedule label for the Journal row ("16h daily" / "16–18h/day").
+function scheduleSummary(sch) {
+  const hrs = sch.map(d => d.targetHours);
+  const lo = Math.min(...hrs), hi = Math.max(...hrs);
+  return lo === hi ? `${lo}h daily` : `${lo}–${hi}h/day`;
+}
+ensureScheduleSeed();
+if (scheduleHistory.length) schedule = cloneSchedule(currentScheduleVer());
+
 /* ---------- 2. Fasting state logic ---------- */
-// The fasting-target hours configured for the weekday of `date` (Targets tab).
+// Fasting-target hours for `date`, from the schedule snapshot in effect THEN
+// (non-retroactive) — editing the schedule never changes past days' targets.
 function targetHoursFor(date) {
-  const s = schedule.find(x => x.weekday === date.getDay());
+  const ver = scheduleAt(date.getTime());
+  const s = ver.find(x => x.weekday === date.getDay());
   return s ? s.targetHours : 16;
 }
 
@@ -949,12 +1016,6 @@ document.getElementById("saveLogBtn").addEventListener("click", () => {
 
 resetEntryDateTime();
 
-// Collapse state for the Logs tab sections (Today open by default).
-const logSectionsOpen = { today: true, week: false, older: false };
-// Journal "Entries" category filter: "all" | "log" (meal/drink times) | "weight" | "waist".
-// The values line up with each item's `kind`, so filtering is a direct match.
-let logFilter = localStorage.getItem("mf_log_filter") || "all";
-
 // The Logs tab: every meal/drink/water/electrolyte log (including the Timer-tab
 // eating markers) plus every weight entry, newest first, each deletable.
 function renderLogs() {
@@ -983,10 +1044,17 @@ function renderLogs() {
     value: s.dir === "off" ? "Target off"
       : `${s.dir === "reduce" ? "Reduce" : "Increase"} ${Number(s.rate).toFixed(2)} kg/wk`
   }));
+  scheduleHistory.forEach((s, i) => items.push({
+    kind: "ftarget", id: "fsch" + i, when: new Date(s.effMs),
+    type: "Fast target", note: "",
+    value: scheduleSummary(s.schedule)
+  }));
   items.sort((a,b) => b.when - a.when);
 
-  // Apply the category filter (kind === filter). "all" keeps everything.
-  const shown = logFilter === "all" ? items : items.filter(it => it.kind === logFilter);
+  // Apply the category filter (kind === filter). "all" keeps everything; the
+  // "target" chip covers both weight targets and fasting targets.
+  const shown = logFilter === "all" ? items : items.filter(it =>
+    logFilter === "target" ? (it.kind === "target" || it.kind === "ftarget") : it.kind === logFilter);
 
   list.innerHTML = "";
   if (shown.length === 0) {
@@ -1056,9 +1124,10 @@ function buildLogItem(it) {
   li.className = "log-item li-" + it.kind;   // li-log / li-weight / li-waist / li-target → colour accent
   li.dataset.kind = it.kind;
   li.dataset.id = it.id;
-  // Target rows are read-only history markers: no chevron, no tap-to-edit. Every
-  // other kind opens the edit sheet. (Target is changed in Settings.)
-  const editable = it.kind !== "target";
+  // Target rows (weight + fasting) are read-only history markers: no chevron, no
+  // tap-to-edit. Every other kind opens the edit sheet. (Targets are changed in
+  // Settings, which records the next timeline entry.)
+  const editable = it.kind !== "target" && it.kind !== "ftarget";
   li.innerHTML = `
     <span class="li-date">${fmtDate(it.when)}</span>
     <div class="li-main">
@@ -1092,6 +1161,7 @@ function buildLogItem(it) {
 
 // Re-render everything that depends on logs/weights after an edit or delete.
 function afterEntryChange() {
+  anchorScheduleSeed();   // keep the schedule seed anchored at the first meal
   renderLogs();
   renderTimer();       // fasting phase + streak recompute from the changed data
   drawWeightChart();   // trends stay in sync (guarded no-op when Trends is hidden)
@@ -1617,7 +1687,21 @@ function drawWeightChart() {
   const scaleVals = filled.filter(v => v != null);   // include carried values so a flat carried segment fits
   if (wt) buckets.forEach((b, i) => { if (wt.targetYs[i] != null) scaleVals.push(wt.targetYs[i]); });
 
-  const scale = niceScale(Math.min(...scaleVals), Math.max(...scaleVals), 4);
+  // Y-axis bounds. Keep the axis from over-zooming on tiny changes:
+  //  • Waist — at least 1 cm of headroom above the max and below the min.
+  //  • Weight — a minimum visible SPAN (Week ≥ 1.5 kg, Month ≥ 6 kg), expanded
+  //    symmetrically around the data midpoint. (Year keeps auto-fit.)
+  let smin = Math.min(...scaleVals), smax = Math.max(...scaleVals);
+  if (isWaist) {
+    smin -= 1; smax += 1;
+  } else {
+    const minSpan = trendRange === "week" ? 1.5 : trendRange === "month" ? 6 : 0;
+    if (minSpan > 0 && (smax - smin) < minSpan) {
+      const pad = (minSpan - (smax - smin)) / 2;
+      smin -= pad; smax += pad;
+    }
+  }
+  const scale = niceScale(smin, smax, 4);
   const { ctx, W, H } = prepCanvas(canvas, 210);
   const a = drawAxes(ctx, W, H, scale, buckets.map(b => b.label), isWaist ? "cm" : "kg", "line");
 
@@ -2006,9 +2090,13 @@ function renderSchedule() {
 
   container.querySelectorAll(".hours-select").forEach(el => {
     el.addEventListener("change", () => {
-      const d = schedule.find(s => s.weekday == el.dataset.weekday);
+      // Non-retroactive: write a new schedule snapshot effective from the start
+      // of the current week; past days keep the target they were judged against.
+      const next = cloneSchedule(schedule);
+      const d = next.find(s => s.weekday == el.dataset.weekday);
       d.targetHours = parseInt(el.value, 10);
-      save(STORE_KEYS.schedule, schedule);
+      setScheduleSegment(next);
+      renderTimer();   // current fast target may change immediately
     });
   });
 }
