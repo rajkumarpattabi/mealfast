@@ -39,7 +39,7 @@
 // App version — shown tiny next to the "MealFast" wordmark so you can confirm at
 // a glance which build the phone is actually running. Keep this in lock-step
 // with CACHE_NAME in sw.js on every deploy.
-const APP_VERSION = "v73";
+const APP_VERSION = "v74";
 
 // localStorage keys for every persisted collection / setting.
 const STORE_KEYS = { logs: "mf_logs", weights: "mf_weights", waist: "mf_waist", schedule: "mf_schedule", wtarget: "mf_wtarget", wtargetHistory: "mf_wtarget_history", scheduleHistory: "mf_schedule_history" };
@@ -1545,9 +1545,10 @@ let trendOffset = 0;
 function trendAnchor() {
   const d = new Date();
   if (trendOffset > 0) {
-    if (trendRange === "week")       d.setDate(d.getDate() - trendOffset * 7);
-    else if (trendRange === "month") d.setDate(d.getDate() - trendOffset * 30);
-    else                             d.setMonth(d.getMonth() - trendOffset * 12);
+    if (trendRange === "week")         d.setDate(d.getDate() - trendOffset * 7);
+    else if (trendRange === "month")   d.setDate(d.getDate() - trendOffset * 30);
+    else if (trendRange === "quarter") d.setDate(d.getDate() - trendOffset * 91);   // 13 weeks
+    else                               d.setMonth(d.getMonth() - trendOffset * 12);
   }
   return d;
 }
@@ -1556,7 +1557,8 @@ function trendAnchor() {
 // otherwise the paged window's span (e.g. "30-Jul – 05-Aug", or "Feb – Jul").
 function trendPeriodLabel() {
   if (trendOffset === 0) {
-    return trendRange === "week" ? "This week" : trendRange === "month" ? "This month" : "This year";
+    return trendRange === "week" ? "This week" : trendRange === "month" ? "This month"
+      : trendRange === "quarter" ? "This quarter" : "This year";
   }
   const bk = trendBuckets(trendRange, trendAnchor());
   const first = bk[0], last = bk[bk.length - 1];
@@ -1576,6 +1578,12 @@ function trendBuckets(range, now) {
     for (let i = 29; i >= 0; i--) {                      // last 30 days, one bucket per day
       const d = new Date(now); d.setDate(now.getDate() - i); d.setHours(0, 0, 0, 0);
       buckets.push({ label: fmtDate(d), day: new Date(d), start: d.getTime(), end: d.getTime() + 86400000 - 1 });
+    }
+  } else if (range === "quarter") {
+    for (let i = 12; i >= 0; i--) {                     // last 13 weeks, one bucket per week
+      const end = new Date(now); end.setDate(now.getDate() - i * 7); end.setHours(23, 59, 59, 999);
+      const start = new Date(end); start.setDate(end.getDate() - 6); start.setHours(0, 0, 0, 0);
+      buckets.push({ label: fmtDate(start), start: start.getTime(), end: end.getTime() });
     }
   } else {                                               // year: 12 calendar months
     for (let b = 11; b >= 0; b--) {
@@ -1695,7 +1703,7 @@ function drawWeightChart() {
   if (isWaist) {
     smin -= 1; smax += 1;
   } else {
-    const minSpan = trendRange === "week" ? 1.5 : trendRange === "month" ? 6 : 0;
+    const minSpan = trendRange === "week" ? 1.5 : (trendRange === "month" || trendRange === "quarter") ? 6 : 0;
     if (minSpan > 0 && (smax - smin) < minSpan) {
       const pad = (minSpan - (smax - smin)) / 2;
       smin -= pad; smax += pad;
@@ -1915,7 +1923,7 @@ const STAGE_GAP_CAP_H = 40;   // ignore stage time past 40h in one gap (likely a
 
 function stageBandsForRange(range, now) {
   const nowMs = now.getTime();
-  const windowDays = range === "week" ? 7 : range === "month" ? 30 : 365;
+  const windowDays = range === "week" ? 7 : range === "month" ? 30 : range === "quarter" ? 91 : 365;
   const windowStart = nowMs - windowDays * 86400000;
   const eats = eatsAscending().filter(t => t <= nowMs);
   const bands = { warm: 0, fat: 0, keto: 0, auto: 0 };
@@ -1955,7 +1963,8 @@ function renderStageBreakdown() {
     return;
   }
   const rep = k => bands[k] / total * 24;   // hours in a representative 24-hour day
-  const rangeLabel = trendRange === "week" ? "last 7 days" : trendRange === "month" ? "last 30 days" : "last 12 months";
+  const rangeLabel = trendRange === "week" ? "last 7 days" : trendRange === "month" ? "last 30 days"
+    : trendRange === "quarter" ? "last 13 weeks" : "last 12 months";
   // One labelled bar per band, stacked to fill the same height as the Duration
   // chart. Each bar's length is that band's share of a 24-hour day.
   let rows = "";
