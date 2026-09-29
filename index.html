@@ -150,6 +150,24 @@
       </div>
     </div>
 
+    <div class="tsec">
+      <button class="tsec-head"><span class="tsec-chev">▸</span><span class="tsec-title">Chest</span></button>
+      <div class="tsec-body" hidden>
+        <div class="card">
+          <div id="chestField" class="weight-field weight-field-full">
+            <select id="chestSelect" class="weight-select"></select>
+            <span class="weight-placeholder">Tap to set chest (cm)</span>
+          </div>
+          <div class="exact-wrap" style="margin-top:10px">
+            <input type="date" id="chestDate" class="exact-input">
+            <input type="time" id="chestTime" class="exact-input">
+            <button id="saveChestBtn" class="primary-btn small">Save</button>
+          </div>
+          <p class="sched-hint" style="margin:8px 0 0">Measure around the fullest part of your chest, arms relaxed, on a gentle exhale — same spot &amp; time each week.</p>
+        </div>
+      </div>
+    </div>
+
     <div class="group-title">Entries</div>
 
     <div class="seg log-filter" id="logFilter">
@@ -157,6 +175,7 @@
       <button class="seg-btn" data-cat="log">Meals</button>
       <button class="seg-btn" data-cat="weight">Weight</button>
       <button class="seg-btn" data-cat="waist">Waist</button>
+      <button class="seg-btn" data-cat="chest">Chest</button>
       <button class="seg-btn" data-cat="target">Target</button>
     </div>
 
@@ -207,6 +226,7 @@
         <div class="seg meas-seg" id="measToggle">
           <button class="seg-btn active" data-meas="weight">Weight</button>
           <button class="seg-btn" data-meas="waist">Waist</button>
+          <button class="seg-btn" data-meas="chest">Chest</button>
         </div>
       </div>
       <canvas id="weightChart" width="320" height="210"></canvas>

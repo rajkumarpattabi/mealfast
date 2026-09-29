@@ -609,18 +609,20 @@ main {
 .li-log    { border-left-color: var(--turmeric); }
 .li-weight { border-left-color: var(--leaf); }
 .li-waist  { border-left-color: var(--chili); }
+.li-chest  { border-left-color: #C77DA0; }              /* chest = soft rose */
 .li-target  { border-left-color: #8E86C7; }             /* weight target = soft indigo (config, not a measurement) */
 .li-ftarget { border-left-color: #5FA0A8; }             /* fasting target = soft teal */
 .li-log    .li-type { color: var(--turmeric); }
 .li-weight .li-type { color: var(--leaf); }
 .li-waist  .li-type { color: var(--chili); }
+.li-chest  .li-type { color: #D68FB2; }
 .li-target  .li-type { color: #9B93D0; }
 .li-ftarget .li-type { color: #6FB3BB; }
 .li-readonly { cursor: default; }                        /* target rows aren't tappable */
 
 /* Entries category filter bar. */
 .log-filter { margin: 2px 0 12px; }
-.log-filter .seg-btn { font-size: 11px; padding: 7px 0; }
+.log-filter .seg-btn { font-size: 10px; padding: 7px 0; }
 
 .li-date {
   font-size: 12px;
@@ -924,9 +926,13 @@ canvas { width: 100%; height: 210px; display: block; }
 /* compact toggle sitting at the top of the trend card (Weight / Waist) */
 .meas-seg { margin: 0 auto 12px; max-width: 220px; }
 .meas-seg .seg-btn { font-size: 12px; padding: 6px 0; }
-/* In a card-head: fixed, roomy width so the two labels aren't cramped */
-.card-head .meas-seg { flex: 0 0 auto; width: 196px; max-width: none; margin: 0 0 0 auto; gap: 4px; }
-.card-head .meas-seg .seg-btn { padding: 8px 6px; font-size: 12.5px; }
+/* In a card-head: fixed, roomy width. Measurement now has three tabs (Weight/
+   Waist/Chest), so widen it and trim padding a touch to fit without crowding. */
+.card-head .meas-seg { flex: 0 0 auto; width: 216px; max-width: none; margin: 0 0 0 auto; gap: 3px; }
+.card-head .meas-seg .seg-btn { padding: 8px 4px; font-size: 12px; }
+/* The Fasting card keeps two tabs (Duration/Stages) — give it the roomier sizing. */
+.card-head #fastToggle { width: 196px; gap: 4px; }
+.card-head #fastToggle .seg-btn { padding: 8px 6px; font-size: 12.5px; }
 
 /* ---- Time-in-stage breakdown (Stages toggle on the fasting card) ---- */
 /* Fixed 210px matches the Duration canvas so the Weight/Waist card below doesn't
