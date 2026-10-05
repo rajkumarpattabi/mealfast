@@ -39,7 +39,7 @@
 // App version — shown tiny next to the "MealFast" wordmark so you can confirm at
 // a glance which build the phone is actually running. Keep this in lock-step
 // with CACHE_NAME in sw.js on every deploy.
-const APP_VERSION = "v80";
+const APP_VERSION = "v81";
 
 // localStorage keys for every persisted collection / setting.
 const STORE_KEYS = { logs: "mf_logs", weights: "mf_weights", waist: "mf_waist", chest: "mf_chest", schedule: "mf_schedule", wtarget: "mf_wtarget", wtargetHistory: "mf_wtarget_history", scheduleHistory: "mf_schedule_history" };
@@ -1727,7 +1727,10 @@ function drawAxes(ctx, W, H, scale, labels, yUnit, mode) {
 
 /* ---- Trends range + bucketing (Week / Month / Year) ---- */
 let trendRange = localStorage.getItem("mf_trend_range") || "week";
-let measureMode = ["waist", "chest"].includes(localStorage.getItem("mf_measure_mode")) ? localStorage.getItem("mf_measure_mode") : "weight";  // weight | waist | chest toggle on the trend card
+// Measurement chart view: "weight" (kg, with target) or "body" (waist + chest on
+// one cm chart). Old per-metric views ("waist"/"chest") migrate to the combined "body".
+const _mm0 = localStorage.getItem("mf_measure_mode");
+let measureMode = (_mm0 === "waist" || _mm0 === "chest" || _mm0 === "body") ? "body" : "weight";
 let fastMode = localStorage.getItem("mf_fast_mode") === "stages" ? "stages" : "duration";     // duration | stages toggle on the fasting card
 
 // How many whole periods back the Fasting + Measurement charts are paged, via the
@@ -1864,117 +1867,73 @@ function fastBucketValue(bucket, isWeek, eats, nowMs) {
 function drawWeightChart() {
   const canvas = document.getElementById("weightChart");
   const empty = document.getElementById("weightEmpty");
-  const isWeight = measureMode === "weight";                 // weight | waist | chest
-  const arr = measureMode === "weight" ? weights : measureMode === "waist" ? waist : chest;
-  const key = isWeight ? "weightKg" : "cm";
-  const buckets = trendBuckets(trendRange, trendAnchor());
-  // real = actual per-bucket value (null when that day/month has no reading) — drives the dots.
-  const real = buckets.map(b => seriesAvgInRange(arr, key, b.start, b.end));
-  const present = real.filter(v => v != null);
-  empty.textContent = `No ${measureMode} entries in this range.`;
-  if (present.length === 0) { empty.hidden = false; canvas.style.display = "none";
-    document.getElementById("weightLegend").hidden = true;
-    document.getElementById("weightStatus").hidden = true; return; }
-  empty.hidden = true; canvas.style.display = "block";
-  if (canvas.clientWidth === 0) return;   // Trends tab hidden — will redraw on show
-
-  // filled = carry-forward series for a continuous line: each empty bucket holds
-  // the last known value. Leading empty buckets are seeded from the most recent
-  // reading BEFORE this window (the previous period), so the line has no break.
-  // (Buckets before the first-ever reading stay null — nothing to carry.)
-  let carry = lastSeriesValueBefore(arr, key, buckets[0].start);
-  const filled = real.map(v => { if (v != null) carry = v; return carry; });
-
-  // Weight target trajectory (weight only — waist has no target line).
-  const wt = isWeight ? weightTargetLine(buckets) : null;   // { active, targetYs, baseKg, targetToday } | null
-  const scaleVals = filled.filter(v => v != null);   // include carried values so a flat carried segment fits
-  if (wt) buckets.forEach((b, i) => { if (wt.targetYs[i] != null) scaleVals.push(wt.targetYs[i]); });
-
-  // Y-axis bounds. Keep the axis from over-zooming on tiny changes:
-  //  • Waist / Chest (cm) — at least 1 cm of headroom above the max and below the min.
-  //  • Weight — a minimum visible SPAN (Week ≥ 1.5 kg, Month/Quarter ≥ 6 kg), expanded
-  //    symmetrically around the data midpoint. (Year keeps auto-fit.)
-  let smin = Math.min(...scaleVals), smax = Math.max(...scaleVals);
-  if (!isWeight) {
-    smin -= 1; smax += 1;
-  } else {
-    const minSpan = trendRange === "week" ? 1.5 : (trendRange === "month" || trendRange === "quarter") ? 6 : 0;
-    if (minSpan > 0 && (smax - smin) < minSpan) {
-      const pad = (minSpan - (smax - smin)) / 2;
-      smin -= pad; smax += pad;
-    }
-  }
-  const scale = niceScale(smin, smax, 4);
-  const { ctx, W, H } = prepCanvas(canvas, 210);
-  const a = drawAxes(ctx, W, H, scale, buckets.map(b => b.label), isWeight ? "kg" : "cm", "line");
-
-  // Target line (leaf green).
-  if (wt) {
-    ctx.save();
-    ctx.strokeStyle = "#6E9B72"; ctx.lineWidth = 2; ctx.setLineDash([2, 3]);
-    ctx.beginPath();
-    let stt = false;
-    wt.targetYs.forEach((v, i) => {
-      if (v == null) return;
-      const x = a.sx(i), y = a.sy(v);
-      if (!stt) { ctx.moveTo(x, y); stt = true; } else ctx.lineTo(x, y);
-    });
-    ctx.stroke();
-    ctx.restore();
-  }
-
-  // Rolling average (trailing, up to 3 present points) — smooths daily noise.
-  const showAvg = present.length >= 3;
-  if (showAvg) {
-    const seen = [];
-    const avg = real.map(v => {   // rolling average is built from real readings only
-      if (v == null) return null;
-      seen.push(v);
-      const w = seen.slice(-3);
-      return w.reduce((s, x) => s + x, 0) / w.length;
-    });
-    ctx.save();
-    ctx.strokeStyle = "rgba(242,237,228,0.55)";
-    ctx.lineWidth = 2;
-    ctx.setLineDash([5, 4]);
-    ctx.beginPath();
-    let st = false;
-    avg.forEach((v, i) => {
-      if (v == null) return;
-      const x = a.sx(i), y = a.sy(v);
-      if (!st) { ctx.moveTo(x, y); st = true; } else ctx.lineTo(x, y);
-    });
-    ctx.stroke();
-    ctx.restore();
-  }
-
-  // Raw measurement line: drawn from the carry-forward `filled` series so it's
-  // continuous across empty days (flat where a value is held). Dots are drawn
-  // from `real` only, so a marker appears solely on days you actually logged.
-  ctx.strokeStyle = "#D9A441"; ctx.lineWidth = 2; ctx.beginPath();
-  let started = false;
-  filled.forEach((v, i) => {
-    if (v == null) return;
-    const x = a.sx(i), y = a.sy(v);
-    if (!started) { ctx.moveTo(x, y); started = true; } else ctx.lineTo(x, y);
-  });
-  ctx.stroke();
-  ctx.fillStyle = "#D9A441";
-  real.forEach((v, i) => { if (v == null) return; ctx.beginPath(); ctx.arc(a.sx(i), a.sy(v), 3, 0, Math.PI * 2); ctx.fill(); });
-
-  // Legend + target status.
   const legend = document.getElementById("weightLegend");
-  if (legend) {
-    legend.hidden = !(showAvg || (wt && wt.active));
-    const solidLabel = document.getElementById("lgSolidLabel");
-    if (solidLabel) solidLabel.textContent = measureMode;
-    const avgItem = legend.querySelector(".lg-item-avg");
-    const tgtItem = legend.querySelector(".lg-item-target");
-    if (avgItem) avgItem.style.display = showAvg ? "" : "none";
-    if (tgtItem) tgtItem.style.display = (wt && wt.active) ? "" : "none";
-  }
   const statusEl = document.getElementById("weightStatus");
-  if (statusEl) {
+  const buckets = trendBuckets(trendRange, trendAnchor());
+  const isWeight = measureMode === "weight";          // "weight" | "body" (waist + chest)
+  let ctx, a;
+
+  // Build a bucketed series: `real` (null where no reading — drives dots) and
+  // `filled` (carry-forward so the line is continuous, seeded from before the window).
+  const seriesFor = (arr, k) => {
+    const real = buckets.map(b => seriesAvgInRange(arr, k, b.start, b.end));
+    let carry = lastSeriesValueBefore(arr, k, buckets[0].start);
+    const filled = real.map(v => { if (v != null) carry = v; return carry; });
+    return { real, filled };
+  };
+  const drawLine = (filled, real, color) => {
+    ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.beginPath();
+    let started = false;
+    filled.forEach((v, i) => { if (v == null) return; const x = a.sx(i), y = a.sy(v); if (!started) { ctx.moveTo(x, y); started = true; } else ctx.lineTo(x, y); });
+    ctx.stroke();
+    ctx.fillStyle = color;
+    real.forEach((v, i) => { if (v == null) return; ctx.beginPath(); ctx.arc(a.sx(i), a.sy(v), 3, 0, Math.PI * 2); ctx.fill(); });
+  };
+
+  if (isWeight) {
+    const S = seriesFor(weights, "weightKg");
+    const present = S.real.filter(v => v != null);
+    empty.textContent = "No weight entries in this range.";
+    if (present.length === 0) { empty.hidden = false; canvas.style.display = "none"; legend.hidden = true; statusEl.hidden = true; return; }
+    empty.hidden = true; canvas.style.display = "block";
+    if (canvas.clientWidth === 0) return;   // Trends tab hidden — will redraw on show
+
+    const wt = weightTargetLine(buckets);
+    const scaleVals = S.filled.filter(v => v != null);
+    if (wt) buckets.forEach((b, i) => { if (wt.targetYs[i] != null) scaleVals.push(wt.targetYs[i]); });
+    // Minimum visible span so tiny changes read as small (Week ≥ 1.5 kg, Month/Quarter ≥ 6 kg).
+    let smin = Math.min(...scaleVals), smax = Math.max(...scaleVals);
+    const minSpan = trendRange === "week" ? 1.5 : (trendRange === "month" || trendRange === "quarter") ? 6 : 0;
+    if (minSpan > 0 && (smax - smin) < minSpan) { const pad = (minSpan - (smax - smin)) / 2; smin -= pad; smax += pad; }
+    const scale = niceScale(smin, smax, 4);
+    const prep = prepCanvas(canvas, 210); ctx = prep.ctx;
+    a = drawAxes(ctx, prep.W, prep.H, scale, buckets.map(b => b.label), "kg", "line");
+
+    // Target line (leaf green, dashed).
+    if (wt) {
+      ctx.save(); ctx.strokeStyle = "#6E9B72"; ctx.lineWidth = 2; ctx.setLineDash([2, 3]); ctx.beginPath();
+      let stt = false;
+      wt.targetYs.forEach((v, i) => { if (v == null) return; const x = a.sx(i), y = a.sy(v); if (!stt) { ctx.moveTo(x, y); stt = true; } else ctx.lineTo(x, y); });
+      ctx.stroke(); ctx.restore();
+    }
+    // Rolling average (weight only).
+    const showAvg = present.length >= 3;
+    if (showAvg) {
+      const seen = [];
+      const avg = S.real.map(v => { if (v == null) return null; seen.push(v); const w = seen.slice(-3); return w.reduce((s, x) => s + x, 0) / w.length; });
+      ctx.save(); ctx.strokeStyle = "rgba(242,237,228,0.55)"; ctx.lineWidth = 2; ctx.setLineDash([5, 4]); ctx.beginPath();
+      let st = false;
+      avg.forEach((v, i) => { if (v == null) return; const x = a.sx(i), y = a.sy(v); if (!st) { ctx.moveTo(x, y); st = true; } else ctx.lineTo(x, y); });
+      ctx.stroke(); ctx.restore();
+    }
+    drawLine(S.filled, S.real, "#D9A441");   // raw weight line (gold)
+
+    let lg = `<span class="lg-item"><span class="lg-swatch lg-solid"></span>weight</span>`;
+    if (showAvg) lg += `<span class="lg-item"><span class="lg-swatch lg-dash"></span>rolling avg</span>`;
+    if (wt && wt.active) lg += `<span class="lg-item"><span class="lg-swatch lg-target"></span>target</span>`;
+    legend.innerHTML = lg;
+    legend.hidden = !(showAvg || (wt && wt.active));
+
     const cur = currentTarget();
     if (wt && cur.dir !== "off") {
       const latest = Number(weights[weights.length - 1].weightKg);
@@ -1986,7 +1945,36 @@ function drawWeightChart() {
     } else {
       statusEl.hidden = true;
     }
+    return;
   }
+
+  // ---- Body view: waist + chest together on one cm chart ----
+  const WAIST_COLOR = "#C1683F", CHEST_COLOR = "#C77DA0";   // match the journal colours
+  const waistS = seriesFor(waist, "cm");
+  const chestS = seriesFor(chest, "cm");
+  const hasW = waistS.real.some(v => v != null);
+  const hasC = chestS.real.some(v => v != null);
+  empty.textContent = "No waist or chest entries in this range.";
+  if (!hasW && !hasC) { empty.hidden = false; canvas.style.display = "none"; legend.hidden = true; statusEl.hidden = true; return; }
+  empty.hidden = true; canvas.style.display = "block";
+  if (canvas.clientWidth === 0) return;
+
+  const scaleVals = [...waistS.filled, ...chestS.filled].filter(v => v != null);
+  // At least 1 cm of headroom above the max and below the min of the combined data.
+  const smin = Math.min(...scaleVals) - 1, smax = Math.max(...scaleVals) + 1;
+  const scale = niceScale(smin, smax, 4);
+  const prep = prepCanvas(canvas, 210); ctx = prep.ctx;
+  a = drawAxes(ctx, prep.W, prep.H, scale, buckets.map(b => b.label), "cm", "line");
+
+  if (hasW) drawLine(waistS.filled, waistS.real, WAIST_COLOR);
+  if (hasC) drawLine(chestS.filled, chestS.real, CHEST_COLOR);
+
+  let lg = "";
+  if (hasW) lg += `<span class="lg-item"><span class="lg-swatch" style="border-top-color:${WAIST_COLOR}"></span>waist</span>`;
+  if (hasC) lg += `<span class="lg-item"><span class="lg-swatch" style="border-top-color:${CHEST_COLOR}"></span>chest</span>`;
+  legend.innerHTML = lg;
+  legend.hidden = false;
+  statusEl.hidden = true;
 }
 
 // Target weight at a moment, walking the timeline from the first weigh-in.
