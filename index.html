@@ -35,17 +35,6 @@
   <span class="topbar-brand"><span class="topbar-mark">MealFast</span><span class="topbar-ver" id="appVer"></span></span>
 </header>
 
-<!-- Shown when no weight/waist/chest has been logged for 7+ days. -->
-<div id="measureBanner" class="measure-banner" hidden>
-  <span class="mb-icon" aria-hidden="true">📏</span>
-  <div class="mb-body">
-    <div class="mb-title">Measurement reminder</div>
-    <span class="mb-text"></span>
-  </div>
-  <button class="mb-go" id="measureGo">Log now</button>
-  <button class="mb-x" id="measureDismiss" aria-label="Dismiss for today" title="Dismiss for today">×</button>
-</div>
-
 <main>
 
   <!-- TIMER -->
@@ -361,6 +350,19 @@
       <button id="editDeleteBtn" class="sheet-btn danger">Delete</button>
       <button id="editCancelBtn" class="sheet-btn">Cancel</button>
       <button id="editSaveBtn" class="sheet-btn primary">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Per-measurement reminder pop-up (weight / waist / chest), shown one at a time
+     on the Home tab when a measurement is 7+ days overdue. -->
+<div id="measureSheet" class="sheet-overlay" hidden>
+  <div class="sheet">
+    <div class="sheet-title" id="measureTitle">Add measurement</div>
+    <p class="sheet-sub" id="measureSub"></p>
+    <div class="sheet-actions">
+      <button id="measureLaterBtn" class="sheet-btn">Later</button>
+      <button id="measureLogBtn" class="sheet-btn primary">Log now</button>
     </div>
   </div>
 </div>

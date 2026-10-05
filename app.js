@@ -39,7 +39,7 @@
 // App version — shown tiny next to the "MealFast" wordmark so you can confirm at
 // a glance which build the phone is actually running. Keep this in lock-step
 // with CACHE_NAME in sw.js on every deploy.
-const APP_VERSION = "v79";
+const APP_VERSION = "v80";
 
 // localStorage keys for every persisted collection / setting.
 const STORE_KEYS = { logs: "mf_logs", weights: "mf_weights", waist: "mf_waist", chest: "mf_chest", schedule: "mf_schedule", wtarget: "mf_wtarget", wtargetHistory: "mf_wtarget_history", scheduleHistory: "mf_schedule_history" };
@@ -980,55 +980,92 @@ document.querySelectorAll(".tab-btn").forEach(btn => {
     if (btn.dataset.tab === "trends") { renderInsight(); renderPersonalBests(); drawWeightChart(); renderFastCard(); renderHeatmap(); updatePager(); }
     if (btn.dataset.tab === "schedule") { renderSchedule(); renderWeightTarget(); renderBackupStatus(); renderNotifStatus(); }
     if (btn.dataset.tab === "journal") { populateWeightSelect(); populateWaistSelect(); populateChestSelect(); renderLogs(); }
-    renderMeasureReminder();
+    if (btn.dataset.tab === "timer") runMeasurePrompts();   // re-check due measurements on returning Home
   });
 });
 
-/* ---------- 7-day measurement reminder (in-app banner + once-a-day lock-screen nudge) ----
-   iOS PWAs can't push in the background, so this fires when the app is open:
-   a dismissible banner (always works, no permission) plus, if notifications are
-   on, one lock-screen nudge per day. Baseline is the last weight/waist/chest
-   entry, or first app use if none yet (so a new user isn't nagged on day one). */
+/* ---------- Per-measurement reminders (weight / waist / chest) ----------
+   On reaching Home (Timer) — on load and whenever you return to it — any body
+   measurement not logged for 7+ days (or never, past first app use) raises a
+   pop-up: "Add <metric> measurement" with Log now / Later. Shown one at a time.
+   Later dismisses that metric for the day; logging it (or returning after you
+   have) drops it from the queue. One consolidated lock-screen nudge per day. */
 const MEASURE_REMIND_DAYS = 7;
-function lastMeasureMs() {
-  let m = 0;
-  for (const arr of [weights, waist, chest]) for (const x of arr) { const t = new Date(x.timestamp).getTime(); if (t > m) m = t; }
+const MEASURES = [
+  { key: "weight", label: "weight", arr: () => weights, section: "Weight" },
+  { key: "waist",  label: "waist",  arr: () => waist,   section: "Waist" },
+  { key: "chest",  label: "chest",  arr: () => chest,   section: "Chest" }
+];
+function metricLastMs(arr) {
+  let m = 0; for (const x of arr) { const t = new Date(x.timestamp).getTime(); if (t > m) m = t; }
   return m;
 }
-function renderMeasureReminder() {
-  const el = document.getElementById("measureBanner");
-  if (!el) return;
-  const lastM = lastMeasureMs();
-  const base = lastM || Number(localStorage.getItem("mf_first_use")) || Date.now();
+// Days overdue for a metric (0 = not due yet). Never-logged uses first app use
+// as the baseline so a new user isn't prompted on day one.
+function metricDueDays(m) {
+  const last = metricLastMs(m.arr());
+  const base = last || Number(localStorage.getItem("mf_first_use")) || Date.now();
   const days = Math.floor((Date.now() - base) / 86400000);
-  const todayStr = new Date().toDateString();
-  if (days < MEASURE_REMIND_DAYS || localStorage.getItem("mf_measure_dismissed") === todayStr) { el.hidden = true; return; }
-  const msg = lastM
-    ? `No body measurement in ${days} days — log your weight, waist or chest.`
-    : `Time to log a body measurement — weight, waist or chest.`;
-  el.querySelector(".mb-text").textContent = msg;
-  el.hidden = false;
-  if (localStorage.getItem("mf_measure_reminded") !== todayStr) {   // one lock-screen nudge per day
-    localStorage.setItem("mf_measure_reminded", todayStr);
-    notify("Measurement reminder ⚖️", msg, "mealfast-measure");
-  }
+  return days >= MEASURE_REMIND_DAYS ? days : 0;
 }
-document.getElementById("measureDismiss").addEventListener("click", () => {
-  localStorage.setItem("mf_measure_dismissed", new Date().toDateString());
-  document.getElementById("measureBanner").hidden = true;
-});
-document.getElementById("measureGo").addEventListener("click", () => {
-  document.getElementById("measureBanner").hidden = true;
+function pendingMeasures() {
+  const todayStr = new Date().toDateString();
+  return MEASURES.filter(m => metricDueDays(m) > 0 && localStorage.getItem("mf_measure_dismissed_" + m.key) !== todayStr);
+}
+// Switch to Journal and open the given measurement's collapsible section.
+function openMeasureSection(section) {
   const jbtn = document.querySelector('.tab-btn[data-tab="journal"]');
   if (jbtn) jbtn.click();
-  document.querySelectorAll('#tab-journal .tsec').forEach(sec => {   // open the Weight sub-section
+  document.querySelectorAll('#tab-journal .tsec').forEach(sec => {
     const head = sec.querySelector('.tsec-head'), body = sec.querySelector('.tsec-body');
-    if (head && /Weight/i.test(head.textContent) && !head.classList.contains('open')) {
-      head.classList.add('open'); if (body) body.hidden = false;
-    }
+    const title = head && head.querySelector('.tsec-title');
+    if (!title || title.textContent.trim().toLowerCase() !== section.toLowerCase()) return;
+    if (!head.classList.contains('open')) { head.classList.add('open'); if (body) body.hidden = false; }
+    try { head.scrollIntoView({ block: "center", behavior: "smooth" }); } catch (e) {}
   });
+}
+let measureQueue = [];
+function showNextMeasurePrompt() {
+  const sheet = document.getElementById("measureSheet");
+  if (!sheet) return;
+  if (measureQueue.length === 0) { sheet.hidden = true; return; }
+  const m = measureQueue[0];
+  const last = metricLastMs(m.arr());
+  const days = metricDueDays(m);
+  document.getElementById("measureTitle").textContent = `Add ${m.label} measurement`;
+  document.getElementById("measureSub").textContent = last
+    ? `It's been ${days} days since your last ${m.label} reading.`
+    : `You haven't logged your ${m.label} yet — add one to start tracking it.`;
+  sheet.dataset.metric = m.key;
+  sheet.dataset.section = m.section;
+  sheet.hidden = false;
+}
+// Entry point: evaluate due measurements and show the queue (call on Home).
+function runMeasurePrompts() {
+  if (document.getElementById("measureSheet") && !document.getElementById("measureSheet").hidden) return; // already prompting
+  measureQueue = pendingMeasures();
+  const todayStr = new Date().toDateString();
+  if (measureQueue.length && localStorage.getItem("mf_measure_reminded") !== todayStr) {
+    localStorage.setItem("mf_measure_reminded", todayStr);           // one lock-screen nudge per day
+    const names = measureQueue.map(m => m.label).join(", ");
+    notify("Measurement reminder 📏", `Time to log your ${names}.`, "mealfast-measure");
+  }
+  showNextMeasurePrompt();
+}
+document.getElementById("measureLaterBtn").addEventListener("click", () => {
+  const key = document.getElementById("measureSheet").dataset.metric;
+  if (key) localStorage.setItem("mf_measure_dismissed_" + key, new Date().toDateString());
+  measureQueue.shift();
+  showNextMeasurePrompt();
 });
-renderMeasureReminder();   // check on load
+document.getElementById("measureLogBtn").addEventListener("click", () => {
+  const sheet = document.getElementById("measureSheet");
+  const section = sheet.dataset.section;
+  sheet.hidden = true;
+  measureQueue = [];                 // going to log now; any others reappear next Home visit
+  openMeasureSection(section);
+});
+runMeasurePrompts();   // check on load (app opens on the Home/Timer tab)
 
 /* ---------- 6. Entries tab: log a meal / drink ---------- */
 
@@ -1239,7 +1276,6 @@ function afterEntryChange() {
   drawWeightChart();   // trends stay in sync (guarded no-op when Trends is hidden)
   renderFastCard();
   renderPersonalBests();
-  renderMeasureReminder();   // logging a measurement clears the reminder
 }
 function escapeHtml(s) {
   return s.replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
