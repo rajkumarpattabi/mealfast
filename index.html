@@ -37,9 +37,13 @@
 
 <!-- Shown when no weight/waist/chest has been logged for 7+ days. -->
 <div id="measureBanner" class="measure-banner" hidden>
-  <span class="mb-text"></span>
-  <button class="mb-go" id="measureGo">Log</button>
-  <button class="mb-x" id="measureDismiss" aria-label="Dismiss">×</button>
+  <span class="mb-icon" aria-hidden="true">📏</span>
+  <div class="mb-body">
+    <div class="mb-title">Measurement reminder</div>
+    <span class="mb-text"></span>
+  </div>
+  <button class="mb-go" id="measureGo">Log now</button>
+  <button class="mb-x" id="measureDismiss" aria-label="Dismiss for today" title="Dismiss for today">×</button>
 </div>
 
 <main>
