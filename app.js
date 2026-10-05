@@ -39,7 +39,7 @@
 // App version — shown tiny next to the "MealFast" wordmark so you can confirm at
 // a glance which build the phone is actually running. Keep this in lock-step
 // with CACHE_NAME in sw.js on every deploy.
-const APP_VERSION = "v75";
+const APP_VERSION = "v78";
 
 // localStorage keys for every persisted collection / setting.
 const STORE_KEYS = { logs: "mf_logs", weights: "mf_weights", waist: "mf_waist", chest: "mf_chest", schedule: "mf_schedule", wtarget: "mf_wtarget", wtargetHistory: "mf_wtarget_history", scheduleHistory: "mf_schedule_history" };
@@ -90,9 +90,20 @@ function migrateSchedule(saved) {
 }
 
 let logs = load(STORE_KEYS.logs, []);
+// One-time cleanup: drop synthetic "Fast auto-capped" meals written by the old
+// (now removed) auto-cap logic, so a genuine long fast recomputes from your real
+// last meal instead of the fake 24h cap.
+(function cleanupAutoCapped() {
+  const before = logs.length;
+  logs = logs.filter(l => !(l && typeof l.note === "string" && l.note.startsWith("Fast auto-capped")));
+  if (logs.length !== before) save(STORE_KEYS.logs, logs);
+})();
 let weights = load(STORE_KEYS.weights, []);
 let waist = load(STORE_KEYS.waist, []);   // [{id, cm, timestamp}] — optional waist measurements
 let chest = load(STORE_KEYS.chest, []);   // [{id, cm, timestamp}] — optional chest measurements
+// First-app-use stamp — baseline for the 7-day measurement reminder when the user
+// has never logged a measurement, so a brand-new user isn't nagged on day one.
+if (!localStorage.getItem("mf_first_use")) localStorage.setItem("mf_first_use", String(Date.now()));
 let schedule = migrateSchedule(load(STORE_KEYS.schedule, defaultSchedule()));
 save(STORE_KEYS.schedule, schedule);
 // Weight target: { dir: "off"|"reduce"|"increase", rate: kg per week }
@@ -258,29 +269,12 @@ function autoCloseStaleEating() {
   return true;
 }
 
-// A fast running past 40h almost always means a meal wasn't logged. When that
-// happens, record the stale fast as a capped 24h fast and restart the timer
-// from there. Loops so a very stale fast (app unopened for days) catches up in
-// one pass; returns true if anything was written.
-const FAST_AUTOCAP_MS = 40 * 3600000;   // ongoing fast beyond 40h triggers the cap
-const FAST_CAP_MS      = 24 * 3600000;  // ...recorded as a 24h fast, then restart
-
-function autoCapStaleFast() {
-  let changed = false;
-  for (let guard = 0; guard < 60; guard++) {
-    const nowMs = new Date().getTime();
-    const last = lastEatEntryBefore(new Date(nowMs));
-    if (!last || last.marker === "start") break;   // no fast running / actively eating
-    const startMs = new Date(last.timestamp).getTime();
-    if (nowMs - startMs <= FAST_AUTOCAP_MS) break;  // under 40h — leave it alone
-
-    const capT = new Date(startMs + FAST_CAP_MS);
-    logs.unshift({ id: uid(), type: "Meal", note: "Fast auto-capped (24h)", timestamp: capT.toISOString() });
-    save(STORE_KEYS.logs, logs);
-    changed = true;
-  }
-  return changed;
-}
+// NOTE: the app no longer auto-caps a long fast by inserting a synthetic meal.
+// That was destructive — a genuine multi-day fast (e.g. 41h) would get a fake
+// "capped" meal, corrupting the journal and resetting the live timer. Long fasts
+// now run their true length and reach the deep stages (Growth Hormone, Deep
+// Autophagy, Immune Reset). If you forget to log a meal, just add it manually.
+// Any old synthetic "Fast auto-capped" entries are cleaned up on load (below).
 
 // The fast rolls from your last meal. A "Started eating" marker with nothing
 // logged after it means you're actively in your eating window; anything else
@@ -320,17 +314,34 @@ function eatsAscending() {
     .sort((a, b) => a - b);
 }
 
-// Evaluate the fast that started on calendar day `d`: { counted, onTarget }.
+// Evaluate the fast credited to calendar day `d`: { counted, onTarget }.
+//  • A day that STARTED a fast (has an eating log) is judged on the gap from its
+//    last meal to the next meal (or now).
+//  • A day with NO eating log that lies fully inside a longer fast is credited on
+//    that enclosing fast's length — so a multi-day fast credits every day it
+//    covers, not just the day it began.
 function dayFastEval(d, eats, nowMs) {
-  const dayStr = d.toDateString();
-  const dayEats = eats.filter(t => new Date(t).toDateString() === dayStr);
-  if (dayEats.length === 0) return { counted: false, onTarget: false };  // no fast started
-  const lastMeal = Math.max(...dayEats);
+  const ds = new Date(d); ds.setHours(0, 0, 0, 0);
+  const dayStart = ds.getTime(), dayEnd = dayStart + 86400000 - 1;
   const targetMs = targetHoursFor(d) * 3600000;
-  const nextMeal = eats.find(t => t > lastMeal);
-  if (nextMeal != null) return { counted: true, onTarget: (nextMeal - lastMeal) >= targetMs };
-  if (nowMs - lastMeal >= targetMs) return { counted: true, onTarget: true };  // ongoing, already past goal
-  return { counted: false, onTarget: false };  // ongoing, undetermined
+  const dayEats = eats.filter(t => t >= dayStart && t <= dayEnd);
+  if (dayEats.length) {
+    const lastMeal = Math.max(...dayEats);
+    const nextMeal = eats.find(t => t > lastMeal);
+    if (nextMeal != null) return { counted: true, onTarget: (nextMeal - lastMeal) >= targetMs };
+    if (nowMs - lastMeal >= targetMs) return { counted: true, onTarget: true };  // ongoing, already past goal
+    return { counted: false, onTarget: false };  // ongoing, undetermined
+  }
+  // No eating log this day — is it fully inside a longer fast?
+  let prevEat = null;
+  for (let i = eats.length - 1; i >= 0; i--) { if (eats[i] < dayStart) { prevEat = eats[i]; break; } }
+  if (prevEat == null) return { counted: false, onTarget: false };   // nothing logged before this day
+  const nextEat = eats.find(t => t > prevEat);
+  const spanEnd = (nextEat != null) ? nextEat : nowMs;               // fast ends, or ongoing to now
+  if (spanEnd <= dayStart) return { counted: false, onTarget: false }; // fast ended before this day
+  if (nextEat == null && nowMs < dayStart) return { counted: false, onTarget: false }; // future day
+  // The day sits inside the fasted span [prevEat, spanEnd]; credit it if the span met this day's target.
+  return (spanEnd - prevEat) >= targetMs ? { counted: true, onTarget: true } : { counted: false, onTarget: false };
 }
 
 function weeklyStreak(now) {
@@ -408,7 +419,10 @@ function fastMilestone(h) {
   if (h < 16) return "fat-burning zone";
   if (h < 18) return "ketosis deepening";
   if (h < 24) return "autophagy ramping up";
-  return "deep fast — autophagy peak";
+  if (h < 36) return "autophagy active";
+  if (h < 48) return "growth hormone surging";
+  if (h < 72) return "deep autophagy";
+  return "stem-cell & immune regeneration";
 }
 
 function updateGreeting(now) {
@@ -459,7 +473,9 @@ const STAGE_ART = {
   earlyketosis:   `<svg viewBox="0 0 100 100" class="art-svg"><circle cx="40" cy="70" r="9"/><circle cx="64" cy="70" r="9"/><line x1="49" y1="70" x2="55" y2="70"/></svg>`,
   ketosis:        `<svg viewBox="0 0 100 100" class="art-svg"><line x1="50" y1="58" x2="38" y2="78"/><line x1="50" y1="58" x2="62" y2="78"/><line x1="38" y1="78" x2="62" y2="78"/><circle cx="50" cy="58" r="6"/><circle cx="38" cy="78" r="6"/><circle cx="62" cy="78" r="6"/></svg>`,
   autophagy:      `<svg viewBox="0 0 100 100" class="art-svg"><circle cx="50" cy="70" r="22"/><path d="M40,62 A12,12 0 1 0 44,58"/><circle cx="50" cy="70" r="5"/></svg>`,
-  deep:           `<svg viewBox="0 0 100 100" class="art-svg"><line x1="50" y1="92" x2="50" y2="64"/><path d="M50,74 C40,74 33,66 35,58 C45,58 50,66 50,74 Z"/><path d="M50,70 C60,70 67,62 65,54 C55,54 50,62 50,70 Z"/></svg>`
+  hgh:            `<svg viewBox="0 0 100 100" class="art-svg"><path d="M28,72 L46,54 L58,66 L74,44"/><path d="M62,44 L74,44 L74,56"/></svg>`,
+  deep:           `<svg viewBox="0 0 100 100" class="art-svg"><line x1="50" y1="92" x2="50" y2="64"/><path d="M50,74 C40,74 33,66 35,58 C45,58 50,66 50,74 Z"/><path d="M50,70 C60,70 67,62 65,54 C55,54 50,62 50,70 Z"/></svg>`,
+  immune:         `<svg viewBox="0 0 100 100" class="art-svg"><path d="M50,30 L70,38 V58 C70,74 50,84 50,84 C50,84 30,74 30,58 V38 Z"/><path d="M41,57 L48,64 L60,48"/></svg>`
 };
 // Elapsed-hour fasting stages. The 4–18h window is split finely since that's
 // where most fasts live. Names kept physiologically accurate (no invented terms).
@@ -470,13 +486,15 @@ function stageForHours(h) {
   if (h < 16) return { key: "fat",            name: "Fat Burning" };
   if (h < 18) return { key: "earlyketosis",   name: "Early Ketosis" };
   if (h < 24) return { key: "ketosis",        name: "Ketosis" };
-  if (h < 48) return { key: "autophagy",      name: "Autophagy Rising" };
-  return { key: "deep", name: "Deep Autophagy" };
+  if (h < 36) return { key: "autophagy",      name: "Autophagy Rising" };
+  if (h < 48) return { key: "hgh",            name: "Growth Hormone" };
+  if (h < 72) return { key: "deep",            name: "Deep Autophagy" };
+  return { key: "immune", name: "Immune Reset" };
 }
 
 // The next fasting stage and how long until it begins, given elapsed ms.
 // Returns null once you're in the deepest stage (nothing further to count to).
-const STAGE_BOUNDS_H = [4, 8, 12, 16, 18, 24, 48];
+const STAGE_BOUNDS_H = [4, 8, 12, 16, 18, 24, 36, 48, 72];
 function nextStageInfo(elapsedMs) {
   const h = elapsedMs / 3600000;
   for (const bh of STAGE_BOUNDS_H) {
@@ -519,15 +537,17 @@ document.getElementById("ringProgress").style.strokeDasharray = RING_CIRC;
    fully-closed app can't be woken. We therefore fire alerts on LIVE ticks only.
    Stages are ordered so we notify on forward progress; the deepest already-seen
    stage per fast is remembered so we never repeat or spam a burst on app open. */
-const STAGE_ORDER = ["digesting", "postabsorptive", "glycogen", "fat", "earlyketosis", "ketosis", "autophagy", "deep"];
+const STAGE_ORDER = ["digesting", "postabsorptive", "glycogen", "fat", "earlyketosis", "ketosis", "autophagy", "hgh", "deep", "immune"];
 const STAGE_BLURB = {
   postabsorptive: "Blood sugar is settling as digestion wraps up.",
   glycogen:       "Running on stored glycogen now.",
   fat:            "You've flipped into fat-burning. 🔥",
   earlyketosis:   "Ketones are starting to rise.",
   ketosis:        "You're in nutritional ketosis. 🥑",
-  autophagy:      "Cellular cleanup (autophagy) is ramping up.",
-  deep:           "Deep autophagy — the deepest fasting stage. 💪"
+  autophagy:      "Cellular cleanup (autophagy) is ramping up. ♻️",
+  hgh:            "Growth hormone is surging — sparing muscle while you burn fat. 💪",
+  deep:           "Deep autophagy — inflammation easing. 🧬",
+  immune:         "72h+ — stem-cell & immune regeneration kicks in. 🛡️"
 };
 
 // Show a notification on the lock/home screen. iOS installed-PWAs require the
@@ -701,7 +721,6 @@ function setStageBox(name, key) {
 
 function renderTimer() {
   let logsChanged = autoCloseStaleEating();
-  if (autoCapStaleFast()) logsChanged = true;
   if (logsChanged) renderLogs();
   const now = new Date();
   const state = rollingFastState(now);
@@ -961,8 +980,55 @@ document.querySelectorAll(".tab-btn").forEach(btn => {
     if (btn.dataset.tab === "trends") { renderInsight(); renderPersonalBests(); drawWeightChart(); renderFastCard(); renderHeatmap(); updatePager(); }
     if (btn.dataset.tab === "schedule") { renderSchedule(); renderWeightTarget(); renderBackupStatus(); renderNotifStatus(); }
     if (btn.dataset.tab === "journal") { populateWeightSelect(); populateWaistSelect(); populateChestSelect(); renderLogs(); }
+    renderMeasureReminder();
   });
 });
+
+/* ---------- 7-day measurement reminder (in-app banner + once-a-day lock-screen nudge) ----
+   iOS PWAs can't push in the background, so this fires when the app is open:
+   a dismissible banner (always works, no permission) plus, if notifications are
+   on, one lock-screen nudge per day. Baseline is the last weight/waist/chest
+   entry, or first app use if none yet (so a new user isn't nagged on day one). */
+const MEASURE_REMIND_DAYS = 7;
+function lastMeasureMs() {
+  let m = 0;
+  for (const arr of [weights, waist, chest]) for (const x of arr) { const t = new Date(x.timestamp).getTime(); if (t > m) m = t; }
+  return m;
+}
+function renderMeasureReminder() {
+  const el = document.getElementById("measureBanner");
+  if (!el) return;
+  const lastM = lastMeasureMs();
+  const base = lastM || Number(localStorage.getItem("mf_first_use")) || Date.now();
+  const days = Math.floor((Date.now() - base) / 86400000);
+  const todayStr = new Date().toDateString();
+  if (days < MEASURE_REMIND_DAYS || localStorage.getItem("mf_measure_dismissed") === todayStr) { el.hidden = true; return; }
+  const msg = lastM
+    ? `No body measurement in ${days} days — log your weight, waist or chest.`
+    : `Time to log a body measurement — weight, waist or chest.`;
+  el.querySelector(".mb-text").textContent = msg;
+  el.hidden = false;
+  if (localStorage.getItem("mf_measure_reminded") !== todayStr) {   // one lock-screen nudge per day
+    localStorage.setItem("mf_measure_reminded", todayStr);
+    notify("Measurement reminder ⚖️", msg, "mealfast-measure");
+  }
+}
+document.getElementById("measureDismiss").addEventListener("click", () => {
+  localStorage.setItem("mf_measure_dismissed", new Date().toDateString());
+  document.getElementById("measureBanner").hidden = true;
+});
+document.getElementById("measureGo").addEventListener("click", () => {
+  document.getElementById("measureBanner").hidden = true;
+  const jbtn = document.querySelector('.tab-btn[data-tab="journal"]');
+  if (jbtn) jbtn.click();
+  document.querySelectorAll('#tab-journal .tsec').forEach(sec => {   // open the Weight sub-section
+    const head = sec.querySelector('.tsec-head'), body = sec.querySelector('.tsec-body');
+    if (head && /Weight/i.test(head.textContent) && !head.classList.contains('open')) {
+      head.classList.add('open'); if (body) body.hidden = false;
+    }
+  });
+});
+renderMeasureReminder();   // check on load
 
 /* ---------- 6. Entries tab: log a meal / drink ---------- */
 
@@ -1173,6 +1239,7 @@ function afterEntryChange() {
   drawWeightChart();   // trends stay in sync (guarded no-op when Trends is hidden)
   renderFastCard();
   renderPersonalBests();
+  renderMeasureReminder();   // logging a measurement clears the reminder
 }
 function escapeHtml(s) {
   return s.replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -2011,7 +2078,7 @@ const STAGE_BANDS = [
   { key: "keto", lo: 18, hi: 24,       name: "Ketosis",     cls: "st-keto" },
   { key: "auto", lo: 24, hi: Infinity, name: "Autophagy",   cls: "st-auto" }
 ];
-const STAGE_GAP_CAP_H = 40;   // ignore stage time past 40h in one gap (likely a missed log)
+const STAGE_GAP_CAP_H = 84;   // ignore stage time past 84h in one gap (covers 72h+ fasts; a truly forgotten multi-week log is still bounded)
 
 function stageBandsForRange(range, now) {
   const nowMs = now.getTime();
@@ -2097,6 +2164,7 @@ function setTrendRange(r) {
   drawWeightChart();
   renderFastCard();
   renderHeatmap();                    // heatmap stays anchored to today (its own long-range view)
+  renderInsight();                    // summary follows the selected range
   updatePager();
 }
 document.getElementById("trendRange").addEventListener("click", (e) => {
@@ -2119,6 +2187,7 @@ function pageTrend(delta) {
   trendOffset = n;
   drawWeightChart();
   renderFastCard();
+  renderInsight();
   updatePager();
 }
 document.getElementById("pagerPrev").addEventListener("click", () => pageTrend(1));
@@ -2128,6 +2197,7 @@ document.getElementById("pagerLabel").addEventListener("click", () => {   // tap
   trendOffset = 0;
   drawWeightChart();
   renderFastCard();
+  renderInsight();
   updatePager();
 });
 
@@ -2245,43 +2315,58 @@ function renderInsight() {
   const el = document.getElementById("insightCard");
   if (!el) return;
   const now = new Date();
-  const day = now.getDay();
-  const weekStart = new Date(now); weekStart.setDate(now.getDate() - day); weekStart.setHours(0, 0, 0, 0);
-  const eats = eatsAscending();
   const nowMs = now.getTime();
+  const eats = eatsAscending();
 
-  // avg actual fast over this week's counted days + adherence
+  // Summary window = exactly what the charts show (selected range + pager offset),
+  // so the one-liner is "Wk / Mo / Qtr / Yr" for Week / Month / Quarter / Year.
+  const bk = trendBuckets(trendRange, trendAnchor());
+  const startMs = bk[0].start;
+  const endMs = Math.min(bk[bk.length - 1].end, nowMs);
+  const lead = trendRange === "week" ? "Wk" : trendRange === "month" ? "Mo"
+    : trendRange === "quarter" ? "Qtr" : "Yr";
+  const weeks = Math.max(1, (endMs - startMs) / (7 * 86400000));
+
+  // Fasting: average actual fast over days that started one, plus adherence
+  // (dayFastEval is now multi-day aware, so a long/ongoing fast is reflected).
   let sum = 0, n = 0, hit = 0, total = 0;
-  for (let d = new Date(weekStart); d <= now; d.setDate(d.getDate() + 1)) {
+  const d = new Date(startMs); d.setHours(0, 0, 0, 0);
+  const endDay = new Date(endMs);
+  for (; d <= endDay; d.setDate(d.getDate() + 1)) {
     const r = dayActualFast(new Date(d), eats, nowMs);
     if (r) { sum += r.hours; n++; }
     const ev = dayFastEval(new Date(d), eats, nowMs);
     if (ev.counted) { total++; if (ev.onTarget) hit++; }
   }
-  if (n === 0 && weights.length === 0 && waist.length === 0 && chest.length === 0) { el.hidden = true; return; }
+
+  // Never blank when there's any history at all (fasts or measurements).
+  if (total === 0 && n === 0 && weights.length === 0 && waist.length === 0 && chest.length === 0 && logs.length === 0) {
+    el.hidden = true; return;
+  }
   el.hidden = false;
 
-  // weight change this week (highest per day: last day with data vs first)
-  const wkW = weights.filter(w => new Date(w.timestamp).getTime() >= weekStart.getTime());
+  // Weight change over the window (first vs last in-window reading). The target
+  // threshold is scaled to the window length so Month/Quarter/Year compare fairly.
+  const wkW = weights.filter(w => { const t = new Date(w.timestamp).getTime(); return t >= startMs && t <= endMs; });
   let wtxt = "";
   if (wkW.length >= 2) {
     const delta = Number(wkW[wkW.length - 1].weightKg) - Number(wkW[0].weightKg);
     const val = `${delta >= 0 ? "+" : "−"}${Math.abs(delta).toFixed(1)}kg`;
-    // Colour vs. goal: green = met/exceeded weekly rate, red = wrong direction, else neutral.
+    const expected = wtarget.rate * weeks;   // expected change over this window
     let cls = "";
     if (wtarget.dir === "reduce") {
-      if (delta > 0.05) cls = "wt-bad";                 // gaining while trying to reduce
-      else if (-delta >= wtarget.rate - 0.001) cls = "wt-good"; // met/exceeded weekly loss
+      if (delta > 0.05) cls = "wt-bad";
+      else if (-delta >= expected - 0.001) cls = "wt-good";
     } else if (wtarget.dir === "increase") {
-      if (delta < -0.05) cls = "wt-bad";                // losing while trying to gain
-      else if (delta >= wtarget.rate - 0.001) cls = "wt-good";  // met/exceeded weekly gain
+      if (delta < -0.05) cls = "wt-bad";
+      else if (delta >= expected - 0.001) cls = "wt-good";
     }
     const span = cls ? `<span class="${cls}">${val}</span>` : val;
     wtxt = ` <span class="insight-sep">·</span> ${span}`;
   }
 
-  // waist change this week (highest per day: last vs first) — a loss is always "good".
-  const wkX = waist.filter(x => new Date(x.timestamp).getTime() >= weekStart.getTime());
+  // Waist change over the window — a loss is always "good".
+  const wkX = waist.filter(x => { const t = new Date(x.timestamp).getTime(); return t >= startMs && t <= endMs; });
   let xtxt = "";
   if (wkX.length >= 2) {
     const delta = Number(wkX[wkX.length - 1].cm) - Number(wkX[0].cm);
@@ -2293,7 +2378,7 @@ function renderInsight() {
 
   const avgTxt = n ? `${(sum / n).toFixed(1)}h` : "—";
   const adhTxt = total ? ` · ${hit}/${total}` : "";
-  el.innerHTML = `<span class="insight-lead">Wk</span> ${avgTxt}${adhTxt}${wtxt}${xtxt}`;
+  el.innerHTML = `<span class="insight-lead">${lead}</span> ${avgTxt}${adhTxt}${wtxt}${xtxt}`;
 }
 
 /* ---------- Personal bests strip (Trends tab) ---------- */
