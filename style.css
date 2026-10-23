@@ -826,6 +826,22 @@ canvas { width: 100%; height: 210px; display: block; }
 }
 .wtarget-select:disabled { opacity: 0.5; }
 .wtarget-unit { color: var(--muted); font-size: 13px; flex: none; }
+.wtarget-sub {
+  font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--muted); margin: 16px 0 8px;
+}
+.wtarget-revs {
+  display: inline-block; margin-top: 6px; line-height: 1.6; opacity: 0.85;
+}
+.wtarget-input {
+  flex: 1; min-width: 0;
+  background: var(--ink-3); color: var(--cream);
+  border: none; border-radius: 10px;
+  padding: 11px 12px; font-size: 14px; font-weight: 600;
+  color-scheme: dark; text-align: center;
+  -webkit-appearance: none; appearance: none;
+}
+.wtarget-row .primary-btn.small { flex: 0 0 auto; padding: 10px 16px; }
 
 /* ---- Weekly insight card ---- */
 /* Trends top bar: compact weekly summary + tiny W/M/Y range filter on one line */

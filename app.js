@@ -39,7 +39,7 @@
 // App version — shown tiny next to the "MealFast" wordmark so you can confirm at
 // a glance which build the phone is actually running. Keep this in lock-step
 // with CACHE_NAME in sw.js on every deploy.
-const APP_VERSION = "v81";
+const APP_VERSION = "v83";
 
 // localStorage keys for every persisted collection / setting.
 const STORE_KEYS = { logs: "mf_logs", weights: "mf_weights", waist: "mf_waist", chest: "mf_chest", schedule: "mf_schedule", wtarget: "mf_wtarget", wtargetHistory: "mf_wtarget_history", scheduleHistory: "mf_schedule_history" };
@@ -118,14 +118,15 @@ let logFilter = localStorage.getItem("mf_log_filter") || "all";      // All | lo
 // Short unique id for a new log/weight/waist entry (timestamp + random suffix).
 function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
 
-/* ---------- Weight-target timeline (non-retroactive targets) ----------
-   Instead of a single global rate that re-slopes the whole history when edited,
-   the target is a TIMELINE of { effMs, dir, rate } segments. Each segment holds
-   from its effective date until the next one. Editing only writes the segment
-   for the current week onward, so past weeks' targets never change. `wtarget`
-   is kept as a convenience mirror of the LATEST (current) segment for the
-   Settings control and status text. The very first segment is dated at your
-   first weigh-in (seeded on upgrade), so the target line still starts there. */
+/* ---------- Weight-target timeline (non-retroactive, re-anchored revisions) ----
+   The target is a TIMELINE of revisions { effMs, anchorKg, dir, rate }. Each
+   revision starts a fresh trajectory on its "as-on" date (effMs), re-anchored at
+   the current weight you typed in (anchorKg), sloping at ±rate kg/week until the
+   next revision. Because every segment carries its OWN anchor + slope, revising
+   the target is non-retroactive: the previous trajectory is left exactly as it
+   was, and the trend line becomes piecewise — e.g. 0.5 kg/wk in the past, then
+   0.4 kg/wk from the new anchor forward. `wtarget` mirrors the LATEST revision
+   for the insight colour. The first segment is seeded at your first weigh-in. */
 let wtargetHistory = load(STORE_KEYS.wtargetHistory, null);
 if (!Array.isArray(wtargetHistory)) wtargetHistory = [];
 
@@ -134,10 +135,19 @@ function weekStartMs(d) {
   const x = new Date(d); x.setHours(0, 0, 0, 0); x.setDate(x.getDate() - x.getDay());
   return x.getTime();
 }
+// The weigh-in value nearest a moment in time (used to backfill an anchor when a
+// revision doesn't carry its own typed-in weight — e.g. migrated legacy segments).
+function weighKgNear(ms) {
+  if (!weights.length) return null;
+  let best = weights[0], bd = Math.abs(new Date(weights[0].timestamp).getTime() - ms);
+  for (const w of weights) { const d = Math.abs(new Date(w.timestamp).getTime() - ms); if (d < bd) { bd = d; best = w; } }
+  return Number(best.weightKg);
+}
 // Seed the first timeline segment at the first weigh-in, if we don't have one yet.
+// Anchored at that first weigh-in weight so the target line starts on your data.
 function ensureTargetSeed() {
   if (wtargetHistory.length === 0 && weights.length) {
-    wtargetHistory.push({ id: uid(), effMs: new Date(weights[0].timestamp).getTime(), dir: wtarget.dir, rate: wtarget.rate });
+    wtargetHistory.push({ id: uid(), effMs: new Date(weights[0].timestamp).getTime(), anchorKg: Number(weights[0].weightKg), dir: wtarget.dir, rate: wtarget.rate });
     save(STORE_KEYS.wtargetHistory, wtargetHistory);
   }
 }
@@ -151,19 +161,28 @@ function segmentAt(t) {
   for (const s of wtargetHistory) { if (s.effMs <= t) seg = s; else break; }
   return seg || wtargetHistory[0] || null;
 }
-// Record an edit: effective from the start of the current week (never before the
-// first segment). Same-week edits update that week's segment in place.
-function setTargetSegment(dir, rate) {
-  let effMs = weekStartMs(new Date());
+// Record a target REVISION: a new (or updated) segment effective from `effMs`
+// (the "as-on" date you chose), re-anchored at the current weight you typed in.
+// Non-retroactive — past segments keep their own anchor + slope, so revising the
+// target never moves the trend line you already drew; it just starts a fresh
+// trajectory from the new anchor forward. Same-date revisions update in place.
+function setTargetRevision(dir, rate, anchorKg, effMs) {
   if (wtargetHistory.length && effMs < wtargetHistory[0].effMs) effMs = wtargetHistory[0].effMs;
   const i = wtargetHistory.findIndex(s => s.effMs === effMs);
-  if (i >= 0) { wtargetHistory[i].dir = dir; wtargetHistory[i].rate = rate; }
-  else { wtargetHistory.push({ id: uid(), effMs, dir, rate }); wtargetHistory.sort((a, b) => a.effMs - b.effMs); }
+  if (i >= 0) { wtargetHistory[i].dir = dir; wtargetHistory[i].rate = rate; if (typeof anchorKg === "number") wtargetHistory[i].anchorKg = anchorKg; }
+  else { wtargetHistory.push({ id: uid(), effMs, anchorKg, dir, rate }); wtargetHistory.sort((a, b) => a.effMs - b.effMs); }
   save(STORE_KEYS.wtargetHistory, wtargetHistory);
   wtarget = { dir, rate };
   save(STORE_KEYS.wtarget, wtarget);   // keep the mirror in sync
 }
 ensureTargetSeed();
+// Backfill an anchor weight on any legacy segment that predates the anchored model,
+// using the weigh-in nearest its effective date (first segment keeps the baseline).
+(function migrateTargetAnchors() {
+  let changed = false;
+  wtargetHistory.forEach(s => { if (typeof s.anchorKg !== "number") { const v = weighKgNear(s.effMs); if (v != null) { s.anchorKg = v; changed = true; } } });
+  if (changed) save(STORE_KEYS.wtargetHistory, wtargetHistory);
+})();
 if (wtargetHistory.length) { const c = currentTarget(); wtarget = { dir: c.dir, rate: c.rate }; }
 
 /* ---------- Fasting-schedule timeline (non-retroactive per-weekday targets) ----
@@ -1151,7 +1170,7 @@ function renderLogs() {
     kind: "target", id: s.id, when: new Date(s.effMs),
     type: "Target", note: "",
     value: s.dir === "off" ? "Target off"
-      : `${s.dir === "reduce" ? "Reduce" : "Increase"} ${Number(s.rate).toFixed(2)} kg/wk`
+      : `${s.dir === "reduce" ? "Reduce" : "Increase"} ${Number(s.rate).toFixed(2)} kg/wk${typeof s.anchorKg === "number" ? ` @ ${Number(s.anchorKg).toFixed(1)} kg` : ""}`
   }));
   scheduleHistory.forEach((s, i) => items.push({
     kind: "ftarget", id: "fsch" + i, when: new Date(s.effMs),
@@ -1934,12 +1953,14 @@ function drawWeightChart() {
     legend.innerHTML = lg;
     legend.hidden = !(showAvg || (wt && wt.active));
 
+    // Comparison: where you are now vs the current revision's target for today,
+    // and whether you're ahead of or behind that trajectory.
+    const latestKg = Number(weights[weights.length - 1].weightKg);
     const cur = currentTarget();
-    if (wt && cur.dir !== "off") {
-      const latest = Number(weights[weights.length - 1].weightKg);
-      const ahead = cur.dir === "reduce" ? (wt.targetToday - latest) : (latest - wt.targetToday);
+    if (wt && cur.dir !== "off" && wt.targetToday != null) {
+      const ahead = cur.dir === "reduce" ? (wt.targetToday - latestKg) : (latestKg - wt.targetToday);
       const word = ahead >= -0.05 ? "ahead of" : "behind";
-      statusEl.textContent = `Target: ${cur.dir} ${cur.rate.toFixed(2)} kg/wk · ${Math.abs(ahead).toFixed(1)} kg ${word} target`;
+      statusEl.textContent = `Now ${latestKg.toFixed(1)} · target ${wt.targetToday.toFixed(1)} kg · ${cur.dir} ${cur.rate.toFixed(2)} kg/wk · ${Math.abs(ahead).toFixed(1)} kg ${word}`;
       statusEl.style.color = ahead >= -0.05 ? "#6E9B72" : "var(--chili)";
       statusEl.hidden = false;
     } else {
@@ -1977,43 +1998,31 @@ function drawWeightChart() {
   statusEl.hidden = true;
 }
 
-// Target weight at a moment, walking the timeline from the first weigh-in.
-// Each segment adds its own slope (reduce/increase · rate·weeks) over the span
-// it governs; "off" segments contribute no slope (the target holds flat). The
-// value is therefore continuous across edits — a new segment picks up from where
-// the previous one left off, so changing the current target never moves the past.
-function weightTargetValueAt(ms, baseKg, baseMs) {
-  let val = baseKg;
-  for (let i = 0; i < wtargetHistory.length; i++) {
-    const s = wtargetHistory[i];
-    const segStart = Math.max(s.effMs, baseMs);
-    const segEnd = (i + 1 < wtargetHistory.length) ? wtargetHistory[i + 1].effMs : Infinity;
-    if (segStart >= ms) break;
-    const end = Math.min(ms, segEnd);
-    if (end > segStart && s.dir !== "off") {
-      const sign = s.dir === "reduce" ? -1 : 1;
-      val += sign * s.rate * ((end - segStart) / (7 * 86400000));
-    }
-  }
-  return val;
+// Target weight at a moment, from the revision governing that moment: its own
+// anchor weight plus ±rate·weeks since that revision's as-on date. Each revision
+// re-anchors, so the value is PIECEWISE (it can step at a revision boundary) — by
+// design, the previous trajectory is never moved. null when no/"off" target or
+// before the first revision.
+function targetAnchoredAt(ms) {
+  const seg = segmentAt(ms);
+  if (!seg || seg.dir === "off" || typeof seg.anchorKg !== "number") return null;
+  const sign = seg.dir === "reduce" ? -1 : 1;
+  return seg.anchorKg + sign * seg.rate * ((ms - seg.effMs) / (7 * 86400000));
 }
 
-// Per-bucket target weights, from the non-retroactive timeline. A bucket whose
-// governing segment is "off" (no target then) draws no target point.
+// Per-bucket target weights from the non-retroactive, re-anchored revision
+// timeline. Each bucket takes the value of whichever revision governs it, so the
+// line shows every past trajectory and the current one side by side.
 function weightTargetLine(buckets) {
-  if (weights.length === 0 || !wtargetHistory.some(s => s.dir !== "off")) return null;
-  const base = weights[0];                       // earliest weigh-in = baseline
-  const baseKg = Number(base.weightKg);
-  const baseMs = new Date(base.timestamp).getTime();
+  if (weights.length === 0 || !wtargetHistory.length) return null;
+  if (!wtargetHistory.some(s => s.dir !== "off")) return null;
+  const firstEff = wtargetHistory[0].effMs;
   const repMs = b => b.day ? (b.day.getTime() + 43200000) : (b.start + b.end) / 2;
   const targetYs = buckets.map(b => {
-    if (b.end < baseMs) return null;             // before any weight was logged
-    const t = Math.max(repMs(b), baseMs);
-    const seg = segmentAt(t);
-    if (!seg || seg.dir === "off") return null;  // target was off during this bucket
-    return weightTargetValueAt(t, baseKg, baseMs);
+    if (b.end < firstEff) return null;           // before the first revision
+    return targetAnchoredAt(Math.max(repMs(b), firstEff));
   });
-  return { active: true, targetYs, baseKg, targetToday: weightTargetValueAt(Date.now(), baseKg, baseMs) };
+  return { active: true, mode: "rate", targetYs, targetToday: targetAnchoredAt(Date.now()) };
 }
 
 // Fasting-hours label for the Duration bars: floor DOWN to the nearest half hour
@@ -2320,17 +2329,66 @@ function renderWeightTarget() {
     const b = weights[0];
     baseHint.textContent = `Baseline: ${Number(b.weightKg).toFixed(1)} kg on ${fmtDate(new Date(b.timestamp))} (first weigh-in).`;
   }
+
+  // Revision anchor: the current weight + as-on date you'll Save as a new target
+  // trajectory, plus a running comparison and the list of revisions so far.
+  const curIn = document.getElementById("wtCur");
+  const dateIn = document.getElementById("wtDate");
+  const hint = document.getElementById("wtHint");
+  const latest = weights.length ? Number(weights[weights.length - 1].weightKg) : null;
+  if (curIn && document.activeElement !== curIn && !curIn.value && latest != null) curIn.value = latest.toFixed(1);
+  if (dateIn && document.activeElement !== dateIn && !dateIn.value) dateIn.value = toDateInput(new Date());
+
+  if (hint) {
+    const active = wtargetHistory.filter(s => s.dir !== "off");
+    if (!active.length) {
+      hint.textContent = "Enter your current weight, an as-on date, and a weekly rate, then Save to start a target trajectory. Save again later with a new rate to revise — the past trajectory stays, the new one picks up from the weight you enter.";
+    } else {
+      const c = currentTarget();
+      const tgtToday = targetAnchoredAt(Date.now());
+      let cmp = "";
+      if (latest != null && tgtToday != null) {
+        const ahead = (c.dir === "reduce" ? tgtToday - latest : latest - tgtToday);
+        cmp = ` · now ${latest.toFixed(1)} vs target ${tgtToday.toFixed(1)} kg (${Math.abs(latest - tgtToday).toFixed(1)} kg ${ahead >= -0.05 ? "ahead" : "behind"})`;
+      }
+      const revs = wtargetHistory.slice().reverse().map(s =>
+        s.dir === "off"
+          ? `• off from ${fmtDate(new Date(s.effMs))}`
+          : `• ${s.dir} ${Number(s.rate).toFixed(2)} kg/wk @ ${typeof s.anchorKg === "number" ? Number(s.anchorKg).toFixed(1) + " kg" : "—"} from ${fmtDate(new Date(s.effMs))}`
+      ).join("<br>");
+      hint.innerHTML = `Current: ${c.dir} ${Number(c.rate).toFixed(2)} kg/wk${cmp}<br><span class="wtarget-revs">${revs}</span>`;
+    }
+  }
 }
-// Edits are non-retroactive: setTargetSegment writes the current-week-forward
-// segment only, leaving past weeks' targets untouched.
+// Direction toggles the rate selector; nothing is committed until you Save — so you
+// can set current weight + as-on date + rate together as one revision.
 document.getElementById("wtDir").addEventListener("change", (e) => {
-  setTargetSegment(e.target.value, wtarget.rate);
+  document.getElementById("wtRate").disabled = e.target.value === "off";
+});
+// Save a target revision: re-anchor at the typed current weight, effective from the
+// chosen as-on date. Non-retroactive — earlier trajectories are left untouched, so
+// the trend line becomes piecewise (e.g. 0.5 kg/wk before, 0.4 kg/wk from here).
+document.getElementById("wtSave").addEventListener("click", () => {
+  const dir = document.getElementById("wtDir").value;
+  const rate = parseFloat(document.getElementById("wtRate").value);
+  const curRaw = document.getElementById("wtCur").value.trim();
+  const dateRaw = document.getElementById("wtDate").value;
+  if (!dateRaw) { showToast("Pick an as-on date"); return; }
+  const effMs = new Date(`${dateRaw}T00:00:00`).getTime();
+  if (isNaN(effMs)) { showToast("Pick a valid date"); return; }
+  if (effMs > Date.now() + 86400000) { showToast("As-on date can't be in the future"); return; }
+  let anchorKg = parseFloat(curRaw);
+  if (dir !== "off") {
+    if (isNaN(anchorKg) || anchorKg <= 0) { showToast("Enter your current weight"); return; }
+    if (isNaN(rate) || rate <= 0) { showToast("Pick a weekly rate"); return; }
+  } else if (isNaN(anchorKg)) {
+    anchorKg = weighKgNear(effMs);
+  }
+  setTargetRevision(dir, isNaN(rate) ? wtarget.rate : rate, anchorKg, effMs);
+  showToast("Target revision saved");
   renderWeightTarget();
   drawWeightChart();
-});
-document.getElementById("wtRate").addEventListener("change", (e) => {
-  setTargetSegment(wtarget.dir, parseFloat(e.target.value));
-  drawWeightChart();
+  renderLogs();
 });
 renderWeightTarget();
 
